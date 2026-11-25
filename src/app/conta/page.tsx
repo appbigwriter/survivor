@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { BottomNav, Button, Card, LinkButton, Page } from "@/components/ui";
-import { requireOnboarded } from "@/lib/auth";
+import { requireProfile } from "@/lib/auth";
 import { signOut } from "../(auth)/actions";
 import { DeleteAccountForm } from "./delete-form";
 
 export default async function AccountPage() {
-  const profile = await requireOnboarded();
+  // Sem exigir consentimento nem anamnese: quem desistir no meio precisa poder sair ou apagar a conta.
+  const profile = await requireProfile();
   return (
     <Page title="Conta">
       <Card title={profile.display_name}>

@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { SURVIVOR_CREATED } from "@/lib/accounts";
 import { env } from "@/lib/env";
 import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -17,8 +18,15 @@ export async function signIn(_prev: FormState, formData: FormData): Promise<Form
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.auth.signInWithPassword(parsed.data);
-  if (error) return { error: "E-mail ou senha incorretos." };
+  const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
+  if (error || !data.user) return { error: "E-mail ou senha incorretos." };
+
+  // Num Supabase compartilhado, o login pode existir sem cadastro no Survivor.
+  const { data: profile } = await supabase.from("profiles").select("id").eq("id", data.user.id).maybeSingle();
+  if (!profile) {
+    await supabase.auth.signOut();
+    return { error: "Esse login ainda não tem cadastro no Survivor. Use o link de convite para criar a conta." };
+  }
   redirect("/");
 }
 
@@ -60,33 +68,60 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
     invitedBy = inv?.created_by ?? null;
   }
 
+  const release = async () => {
+    if (inviteId) await admin.rpc("release_invite", { p_id: inviteId });
+  };
+  const supabase = await createSupabaseServerClient();
+
   const { data: created, error: createError } = await admin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
     user_metadata: { display_name: name },
+    app_metadata: SURVIVOR_CREATED,
   });
 
-  if (createError || !created.user) {
-    if (inviteId) await admin.rpc("release_invite", { p_id: inviteId });
-    const exists = createError?.message?.toLowerCase().includes("already");
-    return { error: exists ? "Já existe uma conta com esse e-mail." : "Não foi possível criar a conta." };
+  let userId: string;
+  let survivorCreated = false;
+  if (created?.user) {
+    userId = created.user.id;
+    survivorCreated = true;
+  } else if (createError?.code === "email_exists" || createError?.message?.toLowerCase().includes("already")) {
+    // O e-mail já tem login neste Supabase (de outro app). Quem sabe a senha
+    // dele pode ligar esse login ao Survivor.
+    const { data: signed, error: signError } = await supabase.auth.signInWithPassword({ email, password });
+    if (signError || !signed.user) {
+      await release();
+      return {
+        error:
+          "Esse e-mail já tem um login neste servidor, usado em outro app. Para entrar no Survivor, use a mesma senha desse login.",
+      };
+    }
+    userId = signed.user.id;
+    const { count } = await admin.from("profiles").select("id", { count: "exact", head: true }).eq("id", userId);
+    if ((count ?? 0) > 0) {
+      await release();
+      redirect("/");
+    }
+  } else {
+    await release();
+    return { error: "Não foi possível criar a conta." };
   }
 
   const { error: profileError } = await admin.from("profiles").insert({
-    id: created.user.id,
+    id: userId,
     display_name: name,
     role,
     invited_by: invitedBy,
   });
   if (profileError) {
-    await admin.auth.admin.deleteUser(created.user.id);
-    if (inviteId) await admin.rpc("release_invite", { p_id: inviteId });
+    if (survivorCreated) await admin.auth.admin.deleteUser(userId);
+    else await supabase.auth.signOut();
+    await release();
     return { error: "Não foi possível criar a conta." };
   }
 
-  const supabase = await createSupabaseServerClient();
-  await supabase.auth.signInWithPassword({ email, password });
+  if (survivorCreated) await supabase.auth.signInWithPassword({ email, password });
   redirect("/consentimento");
 }
 

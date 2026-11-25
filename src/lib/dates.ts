@@ -26,12 +26,14 @@ export function dayRange(dayISO: string): { from: string; to: string } {
 }
 
 export function formatDay(dayISO: string): string {
-  return new Intl.DateTimeFormat("pt-BR", {
+  const text = new Intl.DateTimeFormat("pt-BR", {
     timeZone: TIME_ZONE,
     weekday: "long",
     day: "numeric",
     month: "long",
   }).format(new Date(`${dayISO}T12:00:00${OFFSET}`));
+  // "quarta-feira, 25 de novembro" -> "Quarta-feira, 25 de novembro"
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 export function formatTime(iso: string): string {

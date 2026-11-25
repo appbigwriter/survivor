@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Page } from "@/components/ui";
 import { hasCurrentConsent, requireProfile } from "@/lib/auth";
@@ -29,6 +30,11 @@ export default async function AnamnesePage() {
         screening={(screening?.answers as Record<string, boolean> | undefined) ?? {}}
         medications={(meds ?? []).map((m) => m.name).join("\n")}
       />
+      {!profile.onboarding_completed_at && (
+        <p className="mt-4 text-center">
+          <Link href="/conta" className="text-muted underline">Sair ou apagar minha conta</Link>
+        </p>
+      )}
     </Page>
   );
 }

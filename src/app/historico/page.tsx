@@ -61,7 +61,7 @@ export default async function HistoryPage() {
             const a = agg.get(d)!;
             return (
               <li key={d} className="py-3">
-                <p className="font-medium capitalize">{formatDay(d)}</p>
+                <p className="font-medium">{formatDay(d)}</p>
                 <p className="text-sm text-muted">
                   {a.meals ? `${Math.round(a.kcal).toLocaleString("pt-BR")} kcal · ${Math.round(a.protein)} g proteína` : "sem refeições"}
                   {" · "}

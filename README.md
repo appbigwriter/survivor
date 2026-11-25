@@ -64,6 +64,13 @@ Copie `.env.example` para `.env.local` (desenvolvimento) ou cadastre as mesmas v
 
 `AI_MODEL` vem como `claude-opus-5-5`. Para gastar menos, dá para trocar por `claude-sonnet-5-5` ou `claude-haiku-5-5`; o piloto deve mostrar qual acerta o suficiente nos pratos brasileiros. Com Opus 5.5 e Sonnet 5.5, o app liga o fallback automático do servidor da Anthropic para respostas recusadas.
 
+### Supabase compartilhado com outros apps
+
+O login (`auth.users`) é do Supabase inteiro, não de cada app. Por isso:
+
+- Quem já tem login por causa de outro app se cadastra no Survivor com o mesmo e-mail e a mesma senha desse login. O Survivor confere a senha e só cria o perfil.
+- O Survivor marca os logins que ele mesmo cria (`app_metadata.survivor_created`). Apagar a conta ou desativar uma pessoa só mexe no login quando essa marca existe. Nos outros casos, apaga ou bloqueia apenas os dados do Survivor, e o login continua valendo nos outros apps.
+
 ### 4. Rodar localmente
 
 ```bash

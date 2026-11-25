@@ -51,6 +51,9 @@ export default async function ConsentPage() {
           <Button type="submit" className="w-full">Concordo e quero continuar</Button>
         </Card>
       </form>
+      <p className="mt-4 text-center">
+        <Link href="/conta" className="text-muted underline">Não quero continuar: sair ou apagar minha conta</Link>
+      </p>
     </Page>
   );
 }

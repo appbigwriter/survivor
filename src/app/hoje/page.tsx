@@ -76,7 +76,7 @@ export default async function TodayPage() {
 
   return (
     <Page title="Hoje">
-      <p className="-mt-4 mb-4 capitalize text-muted">{formatDay(today)}</p>
+      <p className="-mt-4 mb-4 text-muted">{formatDay(today)}</p>
 
       {lowIntakeDays === 3 && (
         <Notice>

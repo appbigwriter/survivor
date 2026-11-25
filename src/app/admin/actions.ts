@@ -3,6 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { isSurvivorCreatedLogin } from "@/lib/accounts";
 import { requireAdmin } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
@@ -48,7 +49,10 @@ export async function setUserActive(formData: FormData) {
   const active = formData.get("active") === "true";
   const db = createSupabaseAdminClient();
   await db.from("profiles").update({ active }).eq("id", id);
-  // Bloqueia o login e a renovação do token; a RLS já corta o acesso aos dados.
-  await db.auth.admin.updateUserById(id, { ban_duration: active ? "none" : "876000h" });
+  // A RLS já corta o acesso aos dados. O login só é bloqueado se foi criado
+  // pelo Survivor; um login de outro app do mesmo Supabase continua valendo lá.
+  if (await isSurvivorCreatedLogin(db, id)) {
+    await db.auth.admin.updateUserById(id, { ban_duration: active ? "none" : "876000h" });
+  }
   revalidatePath("/admin");
 }

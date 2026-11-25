@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { deleteSurvivorData, isSurvivorCreatedLogin } from "@/lib/accounts";
 import { requireProfile } from "@/lib/auth";
 import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -22,9 +23,14 @@ export async function deleteAccount(_prev: DeleteState, formData: FormData): Pro
     }
   }
 
-  // Apagar o usuário apaga em cascata todos os registros ligados a ele.
-  const { error } = await admin.auth.admin.deleteUser(profile.id);
-  if (error) return { error: "Não foi possível apagar a conta. Tente de novo." };
+  // Login criado pelo Survivor: apagar o usuário apaga tudo em cascata.
+  // Login vindo de outro app no mesmo Supabase: apaga só os dados do Survivor.
+  if (await isSurvivorCreatedLogin(admin, profile.id)) {
+    const { error } = await admin.auth.admin.deleteUser(profile.id);
+    if (error) return { error: "Não foi possível apagar a conta. Tente de novo." };
+  } else if (!(await deleteSurvivorData(admin, profile.id))) {
+    return { error: "Não foi possível apagar a conta. Tente de novo." };
+  }
 
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();

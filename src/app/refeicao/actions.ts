@@ -40,7 +40,13 @@ export async function analyzeMealText(_prev: AnalyzeState, formData: FormData): 
   const admin = createSupabaseAdminClient();
 
   const limit = env.aiDailyLimit();
-  const analyzer = systemAnalyzer();
+  let analyzer;
+  try {
+    analyzer = systemAnalyzer();
+  } catch (error) {
+    console.error("IA sem configuração:", error);
+    return { error: "A análise por IA ainda não está configurada. Avise o administrador." };
+  }
 
   // Reserva a vaga antes de chamar a IA e só depois conta: pedidos simultâneos
   // não conseguem passar todos do limite.
@@ -74,6 +80,9 @@ export async function analyzeMealText(_prev: AnalyzeState, formData: FormData): 
   try {
     result = await analyzer.analyze({ text });
   } catch (error) {
+    // Falha do serviço (chave inválida, fora do ar) não gasta a cota da pessoa.
+    await admin.from("ai_usage").delete().eq("id", slot.id);
+    console.error("Falha na análise de IA:", error);
     return { error: error instanceof AiError ? error.message : "Erro inesperado na análise." };
   }
 
