@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f6f7f4;
+  --surface: #ffffff;
+  --foreground: #1c2320;
+  --muted: #5b6661;
+  --border: #d9ded9;
+  --primary: #1f6f4a;
+  --primary-foreground: #ffffff;
+  --warning-bg: #fff4dc;
+  --warning-fg: #6b4a00;
+  --danger: #b42318;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #101412;
+    --surface: #181e1b;
+    --foreground: #e8ece9;
+    --muted: #a3ada8;
+    --border: #2c3531;
+    --primary: #4cc38a;
+    --primary-foreground: #0b1410;
+    --warning-bg: #3a2d0c;
+    --warning-fg: #f5d58a;
+    --danger: #f97066;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-fg: var(--warning-fg);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-sans-app);
+}
+
+html {
+  /* Fonte maior por padrão: muitos usuários têm mais de 60 anos. */
+  font-size: 112.5%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans-app), system-ui, sans-serif;
+}
+
+input,
+select,
+textarea {
+  font-size: 1rem;
+}
