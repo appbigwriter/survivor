@@ -73,10 +73,13 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-input,
-select,
-textarea {
-  font-size: 1rem;
+/* Na camada base, para que classes como text-xl possam aumentar o tamanho. */
+@layer base {
+  input,
+  select,
+  textarea {
+    font-size: 1rem;
+  }
 }
 
 .tabular {

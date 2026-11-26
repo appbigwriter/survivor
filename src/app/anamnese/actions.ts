@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { hasCurrentConsent, requireProfile } from "@/lib/auth";
+import { healthyRange } from "@/lib/health/anamnese-steps";
 import { identifyDrugs } from "@/lib/health/medications";
 import { isCautiousMode, SCREENING_QUESTIONS, type ScreeningAnswers } from "@/lib/health/screening";
 import { ageFromBirthDate, computeTargets } from "@/lib/health/targets";
@@ -29,7 +30,7 @@ const schema = z.object({
   calisthenics_minutes_per_session: num(10, 120, "Duração da calistenia: de 10 a 120 minutos."),
   training_location: z.enum(["gym", "home_equipment", "home_none"]),
   training_experience: z.enum(["never", "stopped", "current"]),
-  medications: z.string().max(2000).default(""),
+  medications: z.string().max(2000, "A lista de remédios ficou longa demais.").default(""),
   renal_clearance: z.string().optional(),
 });
 
@@ -48,6 +49,10 @@ export async function saveAnamnese(_prev: AnamneseState, formData: FormData): Pr
   }
   if ((d.goal === "gain_weight" || d.goal === "gain_muscle") && d.target_weight_kg < d.weight_kg) {
     return { error: "Para ganhar peso ou massa, o peso-alvo não pode ser menor que o atual." };
+  }
+  const minHealthy = healthyRange(d.height_cm)[0];
+  if (d.goal === "lose" && d.target_weight_kg < minHealthy) {
+    return { error: `Esse peso-alvo fica abaixo do saudável para a sua altura. Escolha ${minHealthy} kg ou mais.` };
   }
 
   const answers = Object.fromEntries(

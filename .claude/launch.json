@@ -12,6 +12,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["next", "start", "-p", "3100"],
       "port": 3100
+    },
+    {
+      "name": "survivor-standalone",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--env-file=.env.local", "--env-file=.next/standalone/.preview.env", ".next/standalone/server.js"],
+      "port": 3100
     }
   ]
 }
