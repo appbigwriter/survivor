@@ -22,7 +22,8 @@ export default function PrivacyPage() {
           <h2 className="text-lg font-semibold">Quais dados coletamos</h2>
           <p>
             Nome, e-mail, sexo, data de nascimento, altura, peso, cintura, objetivo, respostas da
-            triagem de saúde, remédios, pressão arterial, sintomas, refeições, passos e treinos.
+            triagem de saúde, remédios, pressão arterial, sintomas, refeições, passos, treinos, horários e qualidade do
+            sono e respostas do questionário de apneia.
             Dados de saúde são dados pessoais sensíveis e só são tratados com o seu consentimento
             específico.
           </p>

@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { BottomNav, Card, Page } from "@/components/ui";
 import { DailyBars } from "@/components/dashboard/daily-bars";
 import { suggestedSteps } from "@/lib/dashboard";
+import { sleepMetrics, type SleepLog } from "@/lib/sleep";
 import { requireOnboarded } from "@/lib/auth";
 import { getCurrentGoal } from "@/lib/data";
 import { addDays, dayRange, formatDay, todayISO } from "@/lib/dates";
@@ -15,11 +16,16 @@ export default async function HistoryPage() {
   const today = todayISO();
   const from = dayRange(addDays(today, -(DAYS - 1))).from;
 
-  const [goal, mealsRes, stepsRes, weightsRes] = await Promise.all([
+  const [goal, mealsRes, stepsRes, weightsRes, sleepRes] = await Promise.all([
     getCurrentGoal(),
     supabase.from("meals").select("eaten_at, kcal, protein_g").gte("eaten_at", from),
     supabase.from("step_logs").select("day, steps").gte("day", addDays(today, -(DAYS - 1))),
     supabase.from("weight_logs").select("measured_at, weight_kg").gte("measured_at", from).order("measured_at"),
+    supabase
+      .from("sleep_logs")
+      .select("night, bedtime, wake_time, latency_min, awake_min, quality")
+      .gte("night", addDays(today, -(DAYS - 1)))
+      .order("source", { ascending: false }),
   ]);
 
   const days = Array.from({ length: DAYS }, (_, i) => addDays(today, -i));
@@ -47,6 +53,11 @@ export default async function HistoryPage() {
     : 0;
 
   const chrono = [...days].reverse();
+  const sleepHours = new Map<string, number>();
+  for (const s of (sleepRes.data ?? []) as SleepLog[]) {
+    if (!sleepHours.has(s.night)) sleepHours.set(s.night, sleepMetrics(s).asleepMin / 60);
+  }
+  const avgSleep = sleepHours.size ? [...sleepHours.values()].reduce((a, b) => a + b, 0) / sleepHours.size : null;
   const stepGoal = suggestedSteps(profile.walk_minutes_per_day);
   const withSteps = days.filter((d) => agg.get(d)!.steps > 0);
   const avgSteps = withSteps.length ? withSteps.reduce((a, d) => a + agg.get(d)!.steps, 0) / withSteps.length : 0;
@@ -89,7 +100,29 @@ export default async function HistoryPage() {
         />
       </Card>
 
-      <Card index={3} title="Dia a dia">
+      {sleepHours.size > 0 && (
+        <Card
+          index={3}
+          title="Sono"
+          action={
+            avgSleep !== null ? (
+              <span className="text-muted">média {avgSleep.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} h</span>
+            ) : undefined
+          }
+        >
+          <DailyBars
+            bars={chrono.map((d) => ({ day: d, value: sleepHours.get(d) ?? null }))}
+            target={8}
+            targetLabel="8 h"
+            tolerance={0.125}
+            color="var(--night)"
+            label="Horas de sono por noite nos últimos 14 dias"
+          />
+          <p className="mt-1 text-xs text-muted">Cheia: entre 7 e 9 horas.</p>
+        </Card>
+      )}
+
+      <Card index={4} title="Dia a dia">
         <ul className="divide-y divide-border">
           {days.map((d) => {
             const a = agg.get(d)!;

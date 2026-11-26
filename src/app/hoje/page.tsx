@@ -19,8 +19,11 @@ import {
 } from "@/lib/dashboard";
 import { getCurrentGoal, isCautious } from "@/lib/data";
 import { addDays, dayRange, formatDay, formatTime, MEAL_TYPE_LABEL, minutesOfDay, todayISO } from "@/lib/dates";
+import { isMissingTable } from "@/lib/accounts";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { QuickLog } from "./quick-log";
+import { SleepCard, type NightSummary } from "./sleep-card";
+import { RISK_TEXT, sleepMetrics, sleepVsIntake, type SleepLog } from "@/lib/sleep";
 
 type MealRow = {
   id: string;
@@ -58,7 +61,8 @@ export default async function TodayPage() {
   const { from, to } = dayRange(today);
   const calendarFrom = dayRange(addDays(today, -(CALENDAR_DAYS - 1))).from;
 
-  const [goal, cautious, mealsRes, lastMealRes, stepsRes, weightsRes, historyRes, dizzyRes, streakRes] = await Promise.all([
+  const [goal, cautious, mealsRes, lastMealRes, stepsRes, weightsRes, historyRes, dizzyRes, streakRes, sleepRes, apneaRes] =
+    await Promise.all([
     getCurrentGoal(),
     isCautious(),
     supabase
@@ -93,6 +97,19 @@ export default async function TodayPage() {
       .gte("eaten_at", dayRange(addDays(today, -(STREAK_DAYS - 1))).from)
       .lt("eaten_at", from)
       .limit(5000),
+    supabase
+      .from("sleep_logs")
+      .select("night, bedtime, wake_time, latency_min, awake_min, quality")
+      .gte("night", addDays(today, -(CALENDAR_DAYS - 1)))
+      .order("night", { ascending: false })
+      .order("source", { ascending: false }), // "manual" antes de "apple_health"
+    supabase
+      .from("sleep_screenings")
+      .select("risk, score, taken_at")
+      .eq("kind", "stop_bang")
+      .order("taken_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const meals = (mealsRes.data ?? []) as MealRow[];
@@ -163,6 +180,65 @@ export default async function TodayPage() {
   const lastMealAt = lastMealRes.data?.eaten_at ?? null;
   const lastMealAgo = lastMealAt ? (now.getTime() - Date.parse(lastMealAt)) / 60000 : null;
 
+  // Sono: uma noite por dia (a manual tem prioridade), métricas e comparação com a comida.
+  const sleepByNight = new Map<string, SleepLog>();
+  for (const s of (sleepRes.data ?? []) as SleepLog[]) if (!sleepByNight.has(s.night)) sleepByNight.set(s.night, s);
+  const weekdayFmt = new Intl.DateTimeFormat("pt-BR", { weekday: "short", timeZone: "UTC" });
+  const summarize = (s: SleepLog): NightSummary => {
+    const m = sleepMetrics(s);
+    return {
+      night: s.night,
+      weekday: weekdayFmt.format(new Date(`${s.night}T12:00:00Z`)).replace(".", ""),
+      bed: formatTime(s.bedtime),
+      wake: formatTime(s.wake_time),
+      asleepMin: m.asleepMin,
+      inBedMin: m.inBedMin,
+      efficiency: m.efficiency,
+      quality: s.quality,
+      latency: s.latency_min,
+      awake: s.awake_min,
+    };
+  };
+  const todaySleep = sleepByNight.get(today);
+  const lastSleep = (sleepRes.data ?? [])[0] as SleepLog | undefined;
+  const sleepWeek = Array.from({ length: 7 }, (_, i) => {
+    const s = sleepByNight.get(addDays(today, -(6 - i)));
+    return s ? summarize(s) : null;
+  });
+  // Só dias completos entram na comparação: duas refeições ou mais.
+  const kcalByDay = new Map([...byDay.entries()].filter(([, v]) => v.meals >= 2).map(([d, v]) => [d, v.kcal]));
+  const sleepFood = sleepVsIntake(
+    [...sleepByNight.values()].filter((s) => s.night !== today).map((s) => ({ night: s.night, asleepMin: sleepMetrics(s).asleepMin })),
+    kcalByDay,
+  );
+  const sleepInsight =
+    sleepFood && sleepFood.diff >= 150
+      ? `Nos dias depois de dormir menos de 6 horas, você comeu em média ${Math.round(sleepFood.diff).toLocaleString("pt-BR")} kcal a mais do que depois de noites de 7 horas ou mais (${sleepFood.shortDays} e ${sleepFood.okDays} dias comparados).`
+      : null;
+  const apnea = apneaRes.data
+    ? { risk: apneaRes.data.risk as "low" | "intermediate" | "high", label: RISK_TEXT[apneaRes.data.risk as "low" | "intermediate" | "high"].title.replace(" de apneia", "").toLowerCase() }
+    : null;
+  // No relógio de hoje só entra o trecho depois da meia-noite.
+  const clockSleep = todaySleep
+    ? { from: todayISO(new Date(todaySleep.bedtime)) < today ? 0 : minutesOfDay(todaySleep.bedtime), to: minutesOfDay(todaySleep.wake_time) }
+    : null;
+  // Sem a migração do sono aplicada, o cartão fica escondido em vez de falhar ao salvar.
+  const sleepReady = !(sleepRes.error && isMissingTable(sleepRes.error));
+  // De manhã, sem a noite registrada, o cartão de sono sobe para o topo.
+  const morningAsk = sleepReady && !todaySleep && nowMinutes >= 4 * 60 && nowMinutes < 14 * 60;
+  const sleepCard = (
+    <Card index={morningAsk ? 0 : 4} title="Sono">
+      <SleepCard
+        today={todaySleep ? summarize(todaySleep) : null}
+        last={lastSleep ? summarize(lastSleep) : null}
+        week={sleepWeek}
+        insight={sleepInsight}
+        apnea={apnea}
+        defaultNight={nowMinutes < 4 * 60 ? "yesterday" : "today"}
+      />
+    </Card>
+  );
+
   const remaining = goal ? goal.kcal - kcal : null;
   const hint = nextHint({ hour: Math.floor(nowMinutes / 60), meals: meals.length, kcal, protein, steps, goal, stepGoal });
   const firstName = profile.display_name.split(" ")[0];
@@ -179,6 +255,8 @@ export default async function TodayPage() {
       {(dizzyRes.count ?? 0) >= 2 && (
         <Notice>Você registrou tontura mais de uma vez nesta semana. Meça a pressão e fale com seu médico.</Notice>
       )}
+
+      {morningAsk && sleepCard}
 
       {goal && (
         <Card index={0}>
@@ -210,7 +288,14 @@ export default async function TodayPage() {
       )}
 
       <Card index={1} title="Seu dia" action={<Link href="/refeicao/nova" className="font-semibold text-primary">+ Refeição</Link>}>
-        <DayClock meals={clockMeals} nowMinutes={nowMinutes} lastMealAgoMinutes={lastMealAgo} lastMealAt={lastMealAt} day={today} />
+        <DayClock
+          meals={clockMeals}
+          nowMinutes={nowMinutes}
+          lastMealAgoMinutes={lastMealAgo}
+          lastMealAt={lastMealAt}
+          day={today}
+          sleep={clockSleep}
+        />
         {meals.length === 0 && (
           <div className="mt-4">
             <LinkButton href="/refeicao/nova">Registrar refeição</LinkButton>
@@ -230,7 +315,9 @@ export default async function TodayPage() {
         <QuickLog cautious={cautious} manualSteps={manualSteps} />
       </Card>
 
-      <Card index={4} title="Peso">
+      {sleepReady && !morningAsk && sleepCard}
+
+      <Card index={5} title="Peso">
         {currentAvg !== null ? (
           <>
             <div className="mb-1 flex flex-wrap items-baseline gap-x-3">
@@ -274,7 +361,7 @@ export default async function TodayPage() {
         )}
       </Card>
 
-      <Card index={5} title="Constância">
+      <Card index={6} title="Constância">
         <Consistency days={calendar} today={today} streak={currentStreak} />
       </Card>
 

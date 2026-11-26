@@ -45,6 +45,7 @@ export function DayClock({
   lastMealAgoMinutes: serverAgo,
   lastMealAt,
   day,
+  sleep,
 }: {
   meals: ClockMeal[];
   nowMinutes: number;
@@ -54,6 +55,8 @@ export function DayClock({
   lastMealAt: string | null;
   /** Dia (AAAA-MM-DD) a que a tela se refere. */
   day: string;
+  /** Sono da noite que terminou hoje, em minutos do dia (deitou, acordou). */
+  sleep?: { from: number; to: number } | null;
 }) {
   const router = useRouter();
   const [now, setNow] = useState(serverNow);
@@ -93,8 +96,20 @@ export function DayClock({
         <svg viewBox={`0 0 ${SIZE} ${SIZE}`} width={SIZE} height={SIZE} role="img" aria-label="Relógio do dia com as refeições de hoje">
           {/* trilha */}
           <circle cx={C} cy={C} r={R} fill="none" stroke="var(--surface-2)" strokeWidth={TRACK} />
-          {/* noite (22h às 6h) */}
-          <path d={arc(22 * 60, 6 * 60, R)} fill="none" stroke="var(--night)" strokeOpacity={0.18} strokeWidth={TRACK} />
+          {/* noite (22h às 6h) e, se registrado, o sono de verdade */}
+          <path d={arc(22 * 60, 6 * 60, R)} fill="none" stroke="var(--night)" strokeOpacity={sleep ? 0.08 : 0.18} strokeWidth={TRACK} />
+          {sleep && (
+            <path
+              className="draw"
+              pathLength={1}
+              d={arc(sleep.from, sleep.to, R)}
+              fill="none"
+              stroke="var(--night)"
+              strokeOpacity={0.85}
+              strokeWidth={TRACK}
+              strokeLinecap="round"
+            />
+          )}
           {/* tempo desde a última refeição até agora */}
           {last && now > last.minutes && (
             <path
@@ -212,7 +227,11 @@ export function DayClock({
       <ul className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-muted">
         <li className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-primary" />comeu</li>
         <li className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-muted/50" />desde a última</li>
-        <li className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-night/25" />noite</li>
+        {sleep ? (
+          <li className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-night" />dormiu</li>
+        ) : (
+          <li className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-night/25" />noite</li>
+        )}
       </ul>
     </div>
   );

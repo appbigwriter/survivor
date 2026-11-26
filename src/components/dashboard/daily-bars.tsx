@@ -20,6 +20,7 @@ export function DailyBars({
   label,
   tolerance = 0.1,
   mode = "band",
+  targetLabel,
 }: {
   bars: Bar[];
   target: number | null;
@@ -28,6 +29,8 @@ export function DailyBars({
   tolerance?: number;
   /** "band": bom é ficar perto da meta (calorias). "min": bom é passar da meta (passos). */
   mode?: "band" | "min";
+  /** Texto da linha da meta; o padrão é "meta" e o número. */
+  targetLabel?: string;
 }) {
   const max = Math.max(1, target ? target * 1.25 : 0, ...bars.map((b) => b.value ?? 0));
   const slot = (W - PAD.left - PAD.right) / bars.length;
@@ -69,7 +72,7 @@ export function DailyBars({
         <g>
           <line x1={PAD.left} x2={W - PAD.right} y1={y(target)} y2={y(target)} stroke="var(--foreground)" strokeOpacity={0.55} strokeDasharray="4 4" />
           <text x={W - PAD.right} y={y(target) - 5} textAnchor="end" fontSize={10} fontWeight={600} fill="var(--muted)">
-            meta {target.toLocaleString("pt-BR")}
+            {targetLabel ?? `meta ${target.toLocaleString("pt-BR")}`}
           </text>
         </g>
       )}

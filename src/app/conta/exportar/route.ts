@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isMissingTable } from "@/lib/accounts";
 import { getAuthUser } from "@/lib/auth";
 import { todayISO } from "@/lib/dates";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -15,6 +16,8 @@ const TABLES = [
   "symptom_logs",
   "meals",
   "meal_items",
+  "sleep_logs",
+  "sleep_screenings",
   "ai_usage",
 ] as const;
 
@@ -34,6 +37,7 @@ export async function GET() {
     const rows: unknown[] = [];
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabase.from(table).select("*").range(from, from + PAGE - 1);
+      if (error && isMissingTable(error)) break;
       if (error) {
         return NextResponse.json({ error: `Falha ao exportar ${table}. Tente de novo.` }, { status: 500 });
       }
