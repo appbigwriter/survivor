@@ -6,7 +6,15 @@ import { logBloodPressure, logSteps, logSymptom, logWeight, type LogState } from
 
 function Result({ state }: { state: LogState }) {
   if (state.error) return <Notice tone="error">{state.error}</Notice>;
-  if (state.ok) return <Notice tone="info">{state.ok}</Notice>;
+  if (state.ok)
+    return (
+      <p role="status" className="pop flex items-start gap-2 rounded-2xl bg-primary-soft px-4 py-3">
+        <svg viewBox="0 0 24 24" width="20" height="20" className="mt-0.5 shrink-0 text-primary" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path className="draw" pathLength={1} d="M5 12.5l4.5 4.5L19 7.5" />
+        </svg>
+        <span>{state.ok}</span>
+      </p>
+    );
   return null;
 }
 

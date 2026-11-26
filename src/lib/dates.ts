@@ -54,6 +54,28 @@ export function formatDateTime(iso: string): string {
   }).format(new Date(iso));
 }
 
+/** Minutos desde a meia-noite (0 a 1439) no fuso de Brasília. */
+export function minutesOfDay(date: Date | string = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: TIME_ZONE,
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(new Date(date));
+  const h = Number(parts.find((p) => p.type === "hour")?.value ?? 0) % 24;
+  const m = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+  return h * 60 + m;
+}
+
+/** "3 h 10 min", "45 min". */
+export function formatDuration(minutes: number): string {
+  const m = Math.max(0, Math.round(minutes));
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  if (h === 0) return `${rest} min`;
+  return rest ? `${h} h ${rest} min` : `${h} h`;
+}
+
 /** Tipo de refeição sugerido pelo horário. */
 export function suggestMealType(now = new Date()) {
   const hour = Number(

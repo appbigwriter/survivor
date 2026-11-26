@@ -1,10 +1,26 @@
 import Link from "next/link";
 import { BottomNav, Card, LinkButton, Notice, Page, Progress } from "@/components/ui";
+import { Consistency } from "@/components/dashboard/consistency";
+import { CountUp } from "@/components/dashboard/count-up";
+import { DayClock, type ClockMeal } from "@/components/dashboard/day-clock";
+import { Rings } from "@/components/dashboard/rings";
+import { WeightChart } from "@/components/dashboard/weight-chart";
 import { requireOnboarded } from "@/lib/auth";
+import {
+  dailyWeights,
+  movingAverage,
+  nextHint,
+  projectGoalDate,
+  scoreDay,
+  streak,
+  suggestedSteps,
+  weeklyTrend,
+  type DayScore,
+} from "@/lib/dashboard";
 import { getCurrentGoal, isCautious } from "@/lib/data";
-import { addDays, dayRange, formatDay, formatTime, MEAL_TYPE_LABEL, todayISO } from "@/lib/dates";
+import { addDays, dayRange, formatDay, formatTime, MEAL_TYPE_LABEL, minutesOfDay, todayISO } from "@/lib/dates";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { BloodPressureForm, StepsForm, SymptomForm, WeightForm } from "./log-forms";
+import { QuickLog } from "./quick-log";
 
 type MealRow = {
   id: string;
@@ -18,17 +34,31 @@ type MealRow = {
   meal_items: { name: string }[];
 };
 
-const sum = (rows: MealRow[], key: keyof MealRow) =>
-  rows.reduce((acc, r) => acc + Number(r[key] ?? 0), 0);
+const CALENDAR_DAYS = 28;
+const CHART_DAYS = 30;
+// A sequência olha mais para trás que o calendário, para não travar em 28.
+const STREAK_DAYS = 120;
+
+const sum = (rows: MealRow[], key: keyof MealRow) => rows.reduce((acc, r) => acc + Number(r[key] ?? 0), 0);
+const kg1 = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+function greeting(minutes: number) {
+  if (minutes < 5 * 60) return "Boa noite";
+  if (minutes < 12 * 60) return "Bom dia";
+  if (minutes < 18 * 60) return "Boa tarde";
+  return "Boa noite";
+}
 
 export default async function TodayPage() {
   const profile = await requireOnboarded();
   const supabase = await createSupabaseServerClient();
-  const today = todayISO();
+  const now = new Date();
+  const today = todayISO(now);
+  const nowMinutes = minutesOfDay(now);
   const { from, to } = dayRange(today);
-  const threeDaysAgo = dayRange(addDays(today, -3)).from;
+  const calendarFrom = dayRange(addDays(today, -(CALENDAR_DAYS - 1))).from;
 
-  const [goal, cautious, mealsRes, stepsRes, weightsRes, recentMealsRes, dizzyRes] = await Promise.all([
+  const [goal, cautious, mealsRes, lastMealRes, stepsRes, weightsRes, historyRes, dizzyRes, streakRes] = await Promise.all([
     getCurrentGoal(),
     isCautious(),
     supabase
@@ -37,130 +67,216 @@ export default async function TodayPage() {
       .gte("eaten_at", from)
       .lt("eaten_at", to)
       .order("eaten_at"),
+    supabase
+      .from("meals")
+      .select("eaten_at")
+      .lte("eaten_at", now.toISOString())
+      .gte("eaten_at", dayRange(addDays(today, -2)).from)
+      .order("eaten_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
     supabase.from("step_logs").select("steps, source").eq("day", today),
     supabase
       .from("weight_logs")
       .select("weight_kg, measured_at")
-      .gte("measured_at", dayRange(addDays(today, -13)).from)
-      .order("measured_at", { ascending: false }),
-    supabase.from("meals").select("eaten_at, kcal").gte("eaten_at", threeDaysAgo).lt("eaten_at", from),
+      .gte("measured_at", dayRange(addDays(today, -(CHART_DAYS + 6))).from)
+      .order("measured_at"),
+    supabase.from("meals").select("eaten_at, kcal, protein_g").gte("eaten_at", calendarFrom).lt("eaten_at", from),
     supabase
       .from("symptom_logs")
       .select("id", { count: "exact", head: true })
       .eq("kind", "dizziness")
       .gte("logged_at", dayRange(addDays(today, -7)).from),
+    supabase
+      .from("meals")
+      .select("eaten_at")
+      .gte("eaten_at", dayRange(addDays(today, -(STREAK_DAYS - 1))).from)
+      .lt("eaten_at", from)
+      .limit(5000),
   ]);
 
   const meals = (mealsRes.data ?? []) as MealRow[];
   const kcal = sum(meals, "kcal");
+  const protein = sum(meals, "protein_g");
   const steps = Math.max(0, ...(stepsRes.data ?? []).map((s) => s.steps));
   const manualSteps = (stepsRes.data ?? []).find((s) => s.source === "manual")?.steps ?? null;
+  const stepGoal = suggestedSteps(profile.walk_minutes_per_day);
 
-  const weights = weightsRes.data ?? [];
-  const lastWeight = weights[0]?.weight_kg ?? null;
-  const last7 = weights.filter((w) => w.measured_at >= dayRange(addDays(today, -6)).from);
-  const avg7 = last7.length ? last7.reduce((a, w) => a + Number(w.weight_kg), 0) / last7.length : null;
+  // Peso: um por dia, média de 7 dias, tendência e previsão.
+  const allWeights = dailyWeights(
+    (weightsRes.data ?? []).map((w) => ({ day: todayISO(new Date(w.measured_at)), kg: Number(w.weight_kg), at: w.measured_at })),
+  );
+  const avgs = movingAverage(allWeights);
+  const chartFrom = addDays(today, -(CHART_DAYS - 1));
+  const chartPoints = allWeights
+    .map((p, i) => ({ day: p.day, kg: p.kg, avg: avgs[i].kg }))
+    .filter((p) => p.day >= chartFrom);
+  const lastPoint = chartPoints.at(-1) ?? null;
+  const currentAvg = lastPoint?.avg ?? null;
+  const staleWeight = lastPoint !== null && lastPoint.day < addDays(today, -3);
+  // Compara com cerca de uma semana antes da última pesagem (entre 6 e 10 dias).
+  const weekAgo = lastPoint
+    ? [...chartPoints].reverse().find((p) => p.day <= addDays(lastPoint.day, -6) && p.day >= addDays(lastPoint.day, -10))
+    : undefined;
+  const weekDelta = currentAvg !== null && weekAgo ? currentAvg - weekAgo.avg : null;
+  const trend = weeklyTrend(allWeights.filter((p) => p.day >= addDays(today, -27)));
+  const target = profile.target_weight_kg !== null ? Number(profile.target_weight_kg) : null;
+  const goalDate =
+    lastPoint !== null && target !== null && !staleWeight ? projectGoalDate(lastPoint.avg, target, trend, lastPoint.day) : null;
+
+  // Constância: nota de cada dia nas últimas 4 semanas.
+  const byDay = new Map<string, { meals: number; kcal: number; protein: number }>();
+  for (const m of historyRes.data ?? []) {
+    const d = todayISO(new Date(m.eaten_at));
+    const cur = byDay.get(d) ?? { meals: 0, kcal: 0, protein: 0 };
+    cur.meals++;
+    cur.kcal += Number(m.kcal);
+    cur.protein += Number(m.protein_g);
+    byDay.set(d, cur);
+  }
+  byDay.set(today, { meals: meals.length, kcal, protein });
+  const calendar: DayScore[] = Array.from({ length: CALENDAR_DAYS }, (_, i) => {
+    const day = addDays(today, -(CALENDAR_DAYS - 1 - i));
+    return { day, level: scoreDay(byDay.get(day) ?? { meals: 0, kcal: 0, protein: 0 }, goal) };
+  });
+  const loggedDays = new Set((streakRes.data ?? []).map((m) => todayISO(new Date(m.eaten_at))));
+  const streakDays: DayScore[] = Array.from({ length: STREAK_DAYS }, (_, i) => {
+    const day = addDays(today, -i);
+    return { day, level: day === today ? (meals.length > 0 ? 1 : 0) : loggedDays.has(day) ? 1 : 0 };
+  });
+  const currentStreak = streak(streakDays, today);
 
   // Alerta: menos de 1.500 kcal registradas em cada um dos 3 dias anteriores.
-  const byDay = new Map<string, number>();
-  for (const m of recentMealsRes.data ?? []) {
-    const d = todayISO(new Date(m.eaten_at));
-    byDay.set(d, (byDay.get(d) ?? 0) + Number(m.kcal));
-  }
   const lowIntakeDays = [1, 2, 3].filter((i) => {
     const v = byDay.get(addDays(today, -i));
-    return v !== undefined && v < 1500;
+    return v !== undefined && v.kcal < 1500;
   }).length;
 
+  const clockMeals: ClockMeal[] = meals.map((m) => ({
+    id: m.id,
+    minutes: minutesOfDay(m.eaten_at),
+    time: formatTime(m.eaten_at),
+    label: MEAL_TYPE_LABEL[m.meal_type] ?? "Refeição",
+    kcal: Number(m.kcal),
+    items: m.meal_items.map((i) => i.name).join(", "),
+  }));
+  const lastMealAt = lastMealRes.data?.eaten_at ?? null;
+  const lastMealAgo = lastMealAt ? (now.getTime() - Date.parse(lastMealAt)) / 60000 : null;
+
   const remaining = goal ? goal.kcal - kcal : null;
+  const hint = nextHint({ hour: Math.floor(nowMinutes / 60), meals: meals.length, kcal, protein, steps, goal, stepGoal });
+  const firstName = profile.display_name.split(" ")[0];
+  const firstNameNice = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
 
   return (
-    <Page title="Hoje">
-      <p className="-mt-4 mb-4 text-muted">{formatDay(today)}</p>
-
+    <Page title={`${greeting(nowMinutes)}, ${firstNameNice}`} subtitle={formatDay(today)}>
       {lowIntakeDays === 3 && (
         <Notice>
-          Nos últimos 3 dias você registrou menos de 1.500 kcal por dia. Comer pouco demais faz
-          perder músculo e pode causar tontura. Se foi esquecimento de registrar, tudo bem; se não,
-          tente chegar mais perto da sua meta.
+          Nos últimos 3 dias você registrou menos de 1.500 kcal por dia. Comer pouco demais faz perder músculo e pode
+          causar tontura. Se foi esquecimento de registrar, tudo bem; se não, tente chegar mais perto da sua meta.
         </Notice>
       )}
       {(dizzyRes.count ?? 0) >= 2 && (
-        <Notice>
-          Você registrou tontura mais de uma vez nesta semana. Meça a pressão e fale com seu médico.
-        </Notice>
+        <Notice>Você registrou tontura mais de uma vez nesta semana. Meça a pressão e fale com seu médico.</Notice>
       )}
 
       {goal && (
-        <Card>
-          <p className="text-muted">Calorias restantes</p>
-          <p className="mb-4 text-4xl font-bold">
-            {remaining !== null && remaining >= 0
-              ? `${Math.round(remaining).toLocaleString("pt-BR")} kcal`
-              : `${Math.round(-(remaining ?? 0)).toLocaleString("pt-BR")} kcal acima`}
-          </p>
-          <Progress label="Calorias" value={kcal} target={goal.kcal} unit="kcal" />
-          <Progress label="Proteína" value={sum(meals, "protein_g")} target={goal.protein_g} unit="g" />
-          <Progress label="Carboidrato" value={sum(meals, "carbs_g")} target={goal.carbs_g} unit="g" />
-          <Progress label="Gordura" value={sum(meals, "fat_g")} target={goal.fat_g} unit="g" />
-          <Progress label="Fibra" value={sum(meals, "fiber_g")} target={goal.fiber_g} unit="g" />
-          <p className="mt-2 text-sm text-muted">
-            <Link href="/metas" className="underline">Ver minhas metas e avisos</Link>
-          </p>
+        <Card index={0}>
+          <Rings
+            center={{
+              label: remaining !== null && remaining < 0 ? "acima da meta" : "restam",
+              value: Math.abs(Math.round(remaining ?? 0)),
+              unit: "kcal",
+              over: remaining !== null && remaining < 0,
+            }}
+            rings={[
+              { key: "kcal", label: "Calorias", value: kcal, target: goal.kcal, unit: "kcal", color: "var(--ring-kcal)" },
+              { key: "protein", label: "Proteína", value: protein, target: goal.protein_g, unit: "g", color: "var(--ring-protein)" },
+              { key: "steps", label: "Passos", value: steps, target: stepGoal, unit: "", color: "var(--ring-steps)" },
+            ]}
+          />
+          {hint && (
+            <p
+              className={`rise mt-4 rounded-2xl px-4 py-3 text-sm ${
+                hint.tone === "good" ? "bg-primary-soft text-foreground" : "bg-surface-2 text-foreground"
+              }`}
+              style={{ "--i": 5 } as React.CSSProperties}
+            >
+              {hint.tone === "good" ? "✓ " : ""}
+              {hint.text}
+            </p>
+          )}
         </Card>
       )}
 
-      <Card title="Refeições">
-        {meals.length === 0 ? (
-          <p className="mb-3 text-muted">Nenhuma refeição registrada hoje.</p>
-        ) : (
-          <ul className="mb-3 divide-y divide-border">
-            {meals.map((m) => (
-              <li key={m.id} className="py-2">
-                <Link href={`/refeicao/${m.id}`} className="flex justify-between gap-3">
-                  <span>
-                    <span className="font-medium">{MEAL_TYPE_LABEL[m.meal_type]}</span>{" "}
-                    <span className="text-muted">{formatTime(m.eaten_at)}</span>
-                    <span className="block text-sm text-muted">
-                      {m.meal_items.map((i) => i.name).join(", ")}
-                    </span>
-                  </span>
-                  <span className="shrink-0 font-semibold">{Math.round(m.kcal)} kcal</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+      <Card index={1} title="Seu dia" action={<Link href="/refeicao/nova" className="font-semibold text-primary">+ Refeição</Link>}>
+        <DayClock meals={clockMeals} nowMinutes={nowMinutes} lastMealAgoMinutes={lastMealAgo} lastMealAt={lastMealAt} day={today} />
+        {meals.length === 0 && (
+          <div className="mt-4">
+            <LinkButton href="/refeicao/nova">Registrar refeição</LinkButton>
+          </div>
         )}
-        <LinkButton href="/refeicao/nova">Registrar refeição</LinkButton>
       </Card>
 
-      <Card title="Passos">
-        <p className="mb-3 text-3xl font-bold">{steps.toLocaleString("pt-BR")}</p>
-        <StepsForm current={manualSteps} />
-      </Card>
-
-      <Card title="Peso">
-        <p className="mb-1">
-          Último: <strong>{lastWeight ? `${Number(lastWeight).toLocaleString("pt-BR")} kg` : "—"}</strong>
-        </p>
-        {avg7 && (
-          <p className="mb-3 text-muted">
-            Média dos últimos 7 dias: {avg7.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} kg
-          </p>
-        )}
-        <WeightForm />
-      </Card>
-
-      {cautious && (
-        <>
-          <Card title="Pressão arterial">
-            <BloodPressureForm />
-          </Card>
-          <Card title="Sentiu algo?">
-            <SymptomForm />
-          </Card>
-        </>
+      {goal && (
+        <Card index={2} title="Outros nutrientes" action={<Link href="/metas" className="text-muted underline">metas</Link>}>
+          <Progress label="Carboidrato" value={sum(meals, "carbs_g")} target={goal.carbs_g} unit="g" color="var(--ring-kcal)" index={0} />
+          <Progress label="Gordura" value={sum(meals, "fat_g")} target={goal.fat_g} unit="g" color="var(--night)" index={1} />
+          <Progress label="Fibra" value={sum(meals, "fiber_g")} target={goal.fiber_g} unit="g" color="var(--ring-steps)" index={2} />
+        </Card>
       )}
+
+      <Card index={3} title="Registrar">
+        <QuickLog cautious={cautious} manualSteps={manualSteps} />
+      </Card>
+
+      <Card index={4} title="Peso">
+        {currentAvg !== null ? (
+          <>
+            <div className="mb-1 flex flex-wrap items-baseline gap-x-3">
+              <span className="text-3xl font-bold tracking-tight"><CountUp value={currentAvg} decimals={1} /> kg</span>
+              <span className="text-sm text-muted">
+                média de 7 dias{staleWeight ? `, até ${lastPoint!.day.slice(8)}/${lastPoint!.day.slice(5, 7)}` : ""}
+              </span>
+              {weekDelta !== null && Math.abs(weekDelta) >= 0.05 && (
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-sm font-semibold ${
+                    (target !== null && Math.sign(weekDelta) === Math.sign(target - currentAvg))
+                      ? "bg-primary-soft text-primary"
+                      : "bg-surface-2 text-muted"
+                  }`}
+                >
+                  {weekDelta < 0 ? "↓" : "↑"} {kg1(Math.abs(weekDelta))} kg na semana
+                </span>
+              )}
+            </div>
+            {goalDate ? (
+              <p className="mb-3 text-sm text-muted">
+                Nesse ritmo, {kg1(target!)} kg por volta de{" "}
+                <strong className="text-foreground">
+                  {new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${goalDate}T12:00:00Z`))}
+                </strong>
+                .
+              </p>
+            ) : (
+              <p className="mb-3 text-sm text-muted">
+                {staleWeight
+                  ? "Faz alguns dias que você não se pesa. Registre o peso para atualizar a tendência."
+                  : allWeights.length < 4
+                  ? "Pese-se algumas vezes por semana para o app calcular sua tendência."
+                  : "O peso oscila com água e sal. Olhe a linha da média, não o número do dia."}
+              </p>
+            )}
+            <WeightChart points={chartPoints} target={target} />
+          </>
+        ) : (
+          <p className="text-muted">Registre seu peso na aba Peso, acima, para ver o gráfico.</p>
+        )}
+      </Card>
+
+      <Card index={5} title="Constância">
+        <Consistency days={calendar} today={today} streak={currentStreak} />
+      </Card>
 
       <BottomNav isAdmin={profile.role === "admin"} />
     </Page>

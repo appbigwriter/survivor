@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { Card, Notice, Page } from "@/components/ui";
+import { Brand, Card, Notice, Page } from "@/components/ui";
 import { SignInForm } from "../auth-forms";
 
 export default async function SignInPage({ searchParams }: PageProps<"/entrar">) {
   const { desativada } = await searchParams;
   return (
-    <Page title="Entrar no Survivor">
+    <Page title="Entrar" hero={<Brand tagline="Comida, passos e peso, um dia de cada vez." />}>
       {desativada && (
         <Notice tone="error">Sua conta está desativada. Fale com quem enviou o convite.</Notice>
       )}
