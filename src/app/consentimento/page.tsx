@@ -15,7 +15,7 @@ export default async function ConsentPage() {
           <li>Seus dados do corpo: idade, altura, peso, cintura e pressão.</li>
           <li>Suas respostas sobre saúde e os remédios que você informar.</li>
           <li>O que você come, os passos e os treinos.</li>
-          <li>Seus horários e a qualidade do sono, e as respostas do questionário de apneia.</li>
+          <li>Seus horários e a qualidade do sono, as respostas do questionário de apneia e, se usar o jejum, as respostas da triagem de jejum.</li>
         </ul>
         <p className="mt-3">
           Esses dados servem só para calcular suas metas e mostrar sua evolução. Só você vê seus
@@ -46,7 +46,7 @@ export default async function ConsentPage() {
             <input type="checkbox" name="health" required className="mt-1 size-6" />
             <span>
               Autorizo o tratamento dos meus dados de saúde (peso, pressão, alimentação, remédios, sono,
-              respostas de saúde e do questionário de apneia) para as finalidades descritas acima, como prevê o artigo 11 da LGPD.
+              respostas de saúde e dos questionários de apneia e de jejum) para as finalidades descritas acima, como prevê o artigo 11 da LGPD.
             </span>
           </label>
           <Button type="submit" className="w-full">Concordo e quero continuar</Button>

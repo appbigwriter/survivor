@@ -18,6 +18,7 @@ const TABLES = [
   "meal_items",
   "sleep_logs",
   "sleep_screenings",
+  "fasting_settings",
   "ai_usage",
 ] as const;
 

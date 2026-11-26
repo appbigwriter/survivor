@@ -16,6 +16,7 @@ const USER_TABLES = [
   "meal_items",
   "meals",
   "ai_usage",
+  "fasting_settings",
   "sleep_screenings",
   "sleep_logs",
   "symptom_logs",

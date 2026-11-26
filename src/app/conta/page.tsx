@@ -13,6 +13,7 @@ export default async function AccountPage() {
         <div className="flex flex-col gap-3">
           <LinkButton href="/metas" variant="secondary">Minhas metas</LinkButton>
           <LinkButton href="/anamnese" variant="secondary">Atualizar meus dados e remédios</LinkButton>
+          <LinkButton href="/jejum" variant="secondary">Jejum intermitente</LinkButton>
           <form action={signOut}>
             <Button type="submit" variant="secondary" className="w-full">Sair</Button>
           </form>

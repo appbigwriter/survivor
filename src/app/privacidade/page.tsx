@@ -23,7 +23,7 @@ export default function PrivacyPage() {
           <p>
             Nome, e-mail, sexo, data de nascimento, altura, peso, cintura, objetivo, respostas da
             triagem de saúde, remédios, pressão arterial, sintomas, refeições, passos, treinos, horários e qualidade do
-            sono e respostas do questionário de apneia.
+            sono, respostas do questionário de apneia e as escolhas e respostas da triagem de jejum.
             Dados de saúde são dados pessoais sensíveis e só são tratados com o seu consentimento
             específico.
           </p>
