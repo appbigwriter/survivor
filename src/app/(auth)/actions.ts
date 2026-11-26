@@ -19,6 +19,9 @@ export async function signIn(_prev: FormState, formData: FormData): Promise<Form
 
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
+  if (error?.code === "user_banned") {
+    return { error: "Sua conta está desativada. Fale com quem enviou o convite." };
+  }
   if (error || !data.user) return { error: "E-mail ou senha incorretos." };
 
   // Num Supabase compartilhado, o login pode existir sem cadastro no Survivor.
