@@ -200,6 +200,9 @@ export default async function TodayPage() {
     };
   };
   const todaySleep = sleepByNight.get(today);
+  // Antes das 4h a pessoa ainda não dormiu a noite de hoje: a noite "atual" é a anterior.
+  const currentNightKey = nowMinutes < 4 * 60 ? "yesterday" : "today";
+  const currentSleep = currentNightKey === "yesterday" ? sleepByNight.get(addDays(today, -1)) : todaySleep;
   const lastSleep = (sleepRes.data ?? [])[0] as SleepLog | undefined;
   const sleepWeek = Array.from({ length: 7 }, (_, i) => {
     const s = sleepByNight.get(addDays(today, -(6 - i)));
@@ -229,12 +232,12 @@ export default async function TodayPage() {
   const sleepCard = (
     <Card index={morningAsk ? 0 : 4} title="Sono">
       <SleepCard
-        today={todaySleep ? summarize(todaySleep) : null}
+        today={currentSleep ? summarize(currentSleep) : null}
         last={lastSleep ? summarize(lastSleep) : null}
         week={sleepWeek}
         insight={sleepInsight}
         apnea={apnea}
-        defaultNight={nowMinutes < 4 * 60 ? "yesterday" : "today"}
+        defaultNight={currentNightKey}
       />
     </Card>
   );

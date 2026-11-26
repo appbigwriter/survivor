@@ -233,7 +233,7 @@ export function SleepCard({
         {!today && <p className="mb-4 text-muted">Como foi a noite? Leva meio minuto.</p>}
         <SleepForm
           initial={today ?? last}
-          defaultNight={today ? "today" : defaultNight}
+          defaultNight={defaultNight}
           onSaved={() => setEditing(false)}
           onCancel={today ? () => setEditing(false) : undefined}
         />

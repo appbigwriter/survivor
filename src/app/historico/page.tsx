@@ -90,7 +90,7 @@ export default async function HistoryPage() {
         />
       </Card>
 
-      <Card index={2} title="Passos" action={<span className="text-muted">média {fmt(avgSteps)}</span>}>
+      <Card index={2} title="Passos" action={avgSteps > 0 ? <span className="text-muted">média {fmt(avgSteps)}</span> : undefined}>
         <DailyBars
           bars={chrono.map((d) => ({ day: d, value: agg.get(d)!.steps || null }))}
           target={stepGoal}
