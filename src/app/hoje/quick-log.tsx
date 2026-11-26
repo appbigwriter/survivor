@@ -29,8 +29,8 @@ export function QuickLog({ cautious, manualSteps }: { cautious: boolean; manualS
             type="button"
             aria-selected={tab === t.id}
             onClick={() => setTab(t.id)}
-            className={`min-h-10 min-w-0 flex-1 rounded-xl px-1 text-[0.8rem] font-semibold transition ${
-              tab === t.id ? "bg-surface text-foreground shadow-[var(--shadow)]" : "text-muted"
+            className={`min-h-10 min-w-0 flex-1 rounded-lg px-1 text-[0.85rem] font-semibold transition ${
+              tab === t.id ? "bg-surface text-foreground ring-1 ring-border" : "text-muted"
             }`}
           >
             {t.label}

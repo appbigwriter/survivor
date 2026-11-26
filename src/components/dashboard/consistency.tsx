@@ -37,7 +37,7 @@ export function Consistency({ days, today, streak }: { days: DayScore[]; today: 
         aria-label={`Calendário das últimas 4 semanas: ${logged} dias com registro, ${days.filter((d) => d.level === 3).length} com calorias e proteína na meta.`}
       >
         {WEEKDAYS.map((w, i) => (
-          <span key={i} className="text-center text-xs font-semibold text-muted">
+          <span key={i} className="text-center text-sm font-semibold text-muted">
             {w}
           </span>
         ))}
@@ -54,12 +54,12 @@ export function Consistency({ days, today, streak }: { days: DayScore[]; today: 
           ),
         )}
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
         <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded" style={LEVEL_STYLE[1]} />registrou</span>
         <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded" style={LEVEL_STYLE[2]} />uma meta</span>
         <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded" style={LEVEL_STYLE[3]} />calorias e proteína</span>
       </div>
-      <p className="mt-2 text-xs text-muted">Um dia esquecido por semana não quebra a sequência.</p>
+      <p className="mt-2 text-sm text-muted">Um dia esquecido por semana não quebra a sequência.</p>
     </div>
   );
 }

@@ -32,7 +32,7 @@ export function BottomNav({ isAdmin }: { isAdmin?: boolean }) {
                 <Link
                   href={item.href}
                   aria-current={active ? "page" : undefined}
-                  className={`flex min-w-16 flex-col items-center gap-0.5 px-2 pb-2 pt-2.5 text-xs font-semibold transition-colors ${
+                  className={`flex min-w-16 flex-col items-center gap-0.5 px-2 pb-2 pt-2.5 text-[0.85rem] font-semibold transition-colors ${
                     active ? "text-primary" : "text-muted"
                   }`}
                 >

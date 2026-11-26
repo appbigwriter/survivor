@@ -76,7 +76,7 @@ export function WeightChart({ points, target }: { points: WeightChartPoint[]; ta
             <span className="text-sm text-muted"> · média {kg(h.avg)}</span>
           </p>
         ) : (
-          <p className="text-sm text-muted">Toque ou arraste o dedo no gráfico para ver cada dia.</p>
+          <p className="text-muted">Toque ou arraste o dedo no gráfico para ver cada dia.</p>
         )}
       </div>
       <svg
@@ -93,41 +93,41 @@ export function WeightChart({ points, target }: { points: WeightChartPoint[]; ta
       >
         <defs>
           <linearGradient id="wfill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0" stopColor="var(--chart-line)" stopOpacity={0.22} />
-            <stop offset="1" stopColor="var(--chart-line)" stopOpacity={0} />
+            <stop offset="0" stopColor="var(--chart)" stopOpacity={0.22} />
+            <stop offset="1" stopColor="var(--chart)" stopOpacity={0} />
           </linearGradient>
         </defs>
         {ticks.map((t) => (
           <g key={t}>
             <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} stroke="var(--border)" strokeWidth={1} />
-            <text x={PAD.left - 6} y={y(t)} textAnchor="end" dominantBaseline="central" fontSize={10} fill="var(--muted)">
+            <text x={PAD.left - 6} y={y(t)} textAnchor="end" dominantBaseline="central" fontSize={12} fill="var(--muted)">
               {Math.round(t)}
             </text>
           </g>
         ))}
         {showTarget && (
           <g>
-            <line x1={PAD.left} x2={W - PAD.right} y1={y(target!)} y2={y(target!)} stroke="var(--ring-steps)" strokeWidth={1.5} strokeDasharray="5 4" />
-            <text x={W - PAD.right} y={y(target!) - 6} textAnchor="end" fontSize={10} fontWeight={600} fill="var(--ring-steps)">
+            <line x1={PAD.left} x2={W - PAD.right} y1={y(target!)} y2={y(target!)} stroke="var(--foreground)" strokeOpacity={0.6} strokeWidth={1.5} strokeDasharray="5 4" />
+            <text x={W - PAD.right} y={y(target!) - 6} textAnchor="end" fontSize={12} fontWeight={600} fill="var(--foreground)">
               meta {kg(target!)}
             </text>
           </g>
         )}
         {points.length > 1 && <path d={areaPath} fill="url(#wfill)" className="rise" />}
         {points.map((p, i) => (
-          <circle key={p.day} cx={x(p.day)} cy={y(p.kg)} r={hover === i ? 5 : 3} fill="var(--chart-soft)" className="transition-all" />
+          <circle key={p.day} cx={x(p.day)} cy={y(p.kg)} r={hover === i ? 5 : 3} fill="var(--chart-muted)" className="transition-all" />
         ))}
         {points.length > 1 && (
-          <path className="draw" pathLength={1} d={avgPath} fill="none" stroke="var(--chart-line)" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+          <path className="draw" pathLength={1} d={avgPath} fill="none" stroke="var(--chart)" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
         )}
         {h && (
           <g>
             <line x1={x(h.day)} x2={x(h.day)} y1={PAD.top} y2={H - PAD.bottom} stroke="var(--muted)" strokeOpacity={0.5} strokeDasharray="3 3" />
-            <circle cx={x(h.day)} cy={y(h.avg)} r={5.5} fill="var(--surface)" stroke="var(--chart-line)" strokeWidth={3} />
+            <circle cx={x(h.day)} cy={y(h.avg)} r={5.5} fill="var(--surface)" stroke="var(--chart)" strokeWidth={3} />
           </g>
         )}
-        <text x={PAD.left} y={H - 6} fontSize={10} fill="var(--muted)">{shortDay(points[0].day)}</text>
-        <text x={W - PAD.right} y={H - 6} textAnchor="end" fontSize={10} fill="var(--muted)">{shortDay(points[points.length - 1].day)}</text>
+        <text x={PAD.left} y={H - 6} fontSize={12} fill="var(--muted)">{shortDay(points[0].day)}</text>
+        <text x={W - PAD.right} y={H - 6} textAnchor="end" fontSize={12} fill="var(--muted)">{shortDay(points[points.length - 1].day)}</text>
       </svg>
     </div>
   );

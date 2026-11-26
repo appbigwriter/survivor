@@ -3,6 +3,8 @@ import { BottomNav, Card, Page } from "@/components/ui";
 import { DailyBars } from "@/components/dashboard/daily-bars";
 import { suggestedSteps } from "@/lib/dashboard";
 import { sleepMetrics, type SleepLog } from "@/lib/sleep";
+import { overnightFasts, protocolById } from "@/lib/fasting";
+import { liveFasting, loadFastingContext } from "@/lib/fasting-server";
 import { requireOnboarded } from "@/lib/auth";
 import { getCurrentGoal } from "@/lib/data";
 import { addDays, dayRange, formatDay, todayISO } from "@/lib/dates";
@@ -16,7 +18,7 @@ export default async function HistoryPage() {
   const today = todayISO();
   const from = dayRange(addDays(today, -(DAYS - 1))).from;
 
-  const [goal, mealsRes, stepsRes, weightsRes, sleepRes] = await Promise.all([
+  const [goal, mealsRes, stepsRes, weightsRes, sleepRes, fastingCtx, prevMealRes] = await Promise.all([
     getCurrentGoal(),
     supabase.from("meals").select("eaten_at, kcal, protein_g").gte("eaten_at", from),
     supabase.from("step_logs").select("day, steps").gte("day", addDays(today, -(DAYS - 1))),
@@ -26,6 +28,9 @@ export default async function HistoryPage() {
       .select("night, bedtime, wake_time, latency_min, awake_min, quality")
       .gte("night", addDays(today, -(DAYS - 1)))
       .order("source", { ascending: false }),
+    loadFastingContext(profile),
+    // Última refeição antes do período, para calcular o jejum do primeiro dia.
+    supabase.from("meals").select("eaten_at").lt("eaten_at", from).order("eaten_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
 
   const days = Array.from({ length: DAYS }, (_, i) => addDays(today, -i));
@@ -53,6 +58,18 @@ export default async function HistoryPage() {
     : 0;
 
   const chrono = [...days].reverse();
+  const liveF = liveFasting(fastingCtx);
+  const fasting = liveF.active && liveF.settings ? protocolById(liveF.settings.protocol) : null;
+  const fasts = fasting
+    ? overnightFasts(
+        [...(mealsRes.data ?? []), ...(prevMealRes.data ? [prevMealRes.data] : [])].map((m) => ({
+          at: m.eaten_at,
+          day: todayISO(new Date(m.eaten_at)),
+        })),
+      )
+    : new Map<string, number>();
+  const fastDays = chrono.filter((d) => fasts.has(d));
+  const fastsOnTarget = fasting ? fastDays.filter((d) => fasts.get(d)! >= fasting.fastH).length : 0;
   const sleepHours = new Map<string, number>();
   for (const s of (sleepRes.data ?? []) as SleepLog[]) {
     if (!sleepHours.has(s.night)) sleepHours.set(s.night, sleepMetrics(s).asleepMin / 60);
@@ -73,19 +90,19 @@ export default async function HistoryPage() {
             { label: "dias na meta", value: String(inTarget) },
             { label: "kcal por dia", value: fmt(avgKcal) },
           ].map((s, i) => (
-            <div key={s.label} className="pop rounded-2xl border border-border bg-surface p-3 text-center shadow-[var(--shadow)]" style={{ "--i": i * 6 } as CSSProperties}>
+            <div key={s.label} className="pop rounded-2xl border border-border bg-surface p-3 text-center" style={{ "--i": i * 6 } as CSSProperties}>
               <span className="block text-2xl font-bold">{s.value}</span>
-              <span className="block text-xs text-muted">{s.label}</span>
+              <span className="block text-sm text-muted">{s.label}</span>
             </div>
           ))}
         </div>
       )}
 
-      <Card index={1} title="Calorias" action={goal ? <span className="text-muted">cheia = dentro da meta</span> : undefined}>
+      <Card index={1} title="Calorias" action={goal ? <span className="text-muted">verde cheio = na meta</span> : undefined}>
         <DailyBars
           bars={chrono.map((d) => ({ day: d, value: agg.get(d)!.meals ? agg.get(d)!.kcal : null }))}
           target={goal?.kcal ?? null}
-          color="var(--ring-kcal)"
+          color="var(--primary)"
           label="Calorias por dia nos últimos 14 dias"
         />
       </Card>
@@ -94,7 +111,7 @@ export default async function HistoryPage() {
         <DailyBars
           bars={chrono.map((d) => ({ day: d, value: agg.get(d)!.steps || null }))}
           target={stepGoal}
-          color="var(--ring-steps)"
+          color="var(--primary)"
           mode="min"
           label="Passos por dia nos últimos 14 dias"
         />
@@ -115,14 +132,32 @@ export default async function HistoryPage() {
             target={8}
             targetLabel="8 h"
             tolerance={0.125}
-            color="var(--night)"
+            color="var(--primary)"
             label="Horas de sono por noite nos últimos 14 dias"
           />
-          <p className="mt-1 text-xs text-muted">Cheia: entre 7 e 9 horas.</p>
+          <p className="mt-2 text-sm text-muted">Verde cheio: entre 7 e 9 horas.</p>
         </Card>
       )}
 
-      <Card index={4} title="Dia a dia">
+      {fasting && fastDays.length > 0 && (
+        <Card
+          index={4}
+          title="Jejum"
+          action={<span className="text-muted">{fastsOnTarget} de {fastDays.length} dias na meta</span>}
+        >
+          <DailyBars
+            bars={chrono.map((d) => ({ day: d, value: fasts.get(d) ?? null }))}
+            target={fasting.fastH}
+            targetLabel={`${fasting.fastH} h`}
+            color="var(--primary)"
+            mode="min"
+            label="Horas de jejum por dia nos últimos 14 dias"
+          />
+          <p className="mt-2 text-sm text-muted">Da última refeição de um dia até a primeira do dia seguinte.</p>
+        </Card>
+      )}
+
+      <Card index={5} title="Dia a dia">
         <ul className="divide-y divide-border">
           {days.map((d) => {
             const a = agg.get(d)!;
@@ -130,7 +165,7 @@ export default async function HistoryPage() {
             return (
               <li key={d} className="flex items-center gap-3 py-3">
                 <span
-                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${onTarget ? "bg-primary" : a.meals ? "bg-kcal/50" : "bg-border"}`}
+                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${onTarget ? "bg-primary" : a.meals ? "bg-accent" : "bg-border"}`}
                   aria-hidden
                 />
                 <span className="min-w-0 flex-1">

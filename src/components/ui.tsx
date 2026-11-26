@@ -29,7 +29,7 @@ export function Page({
               ← Voltar
             </Link>
           )}
-          {subtitle && <p className="text-sm font-medium text-muted">{subtitle}</p>}
+          {subtitle && <p className="font-medium text-muted">{subtitle}</p>}
           <h1 className="text-[1.75rem] font-bold leading-tight tracking-tight">{title}</h1>
         </header>
         {children}
@@ -54,7 +54,7 @@ export function Card({
 }) {
   return (
     <section
-      className={cx("rise mb-4 rounded-3xl border border-border bg-surface p-5 shadow-[var(--shadow)]", className)}
+      className={cx("rise mb-4 rounded-2xl border border-border bg-surface p-5", className)}
       style={index !== undefined ? ({ "--i": index } as CSSProperties) : undefined}
     >
       {(title || action) && (
@@ -143,31 +143,34 @@ export function Progress({
   value,
   target,
   unit,
-  color = "var(--primary)",
+  size = "md",
   index = 0,
 }: {
   label: string;
   value: number;
   target: number | null;
   unit: string;
-  color?: string;
+  /** "lg" para os números principais do dia. */
+  size?: "md" | "lg";
   index?: number;
 }) {
   const pct = target ? Math.min(100, (value / target) * 100) : 0;
   const over = target ? value > target * 1.1 : false;
+  const fmt = (n: number) => Math.round(n).toLocaleString("pt-BR");
   return (
-    <div className="mb-3">
-      <div className="mb-1 flex justify-between text-sm">
-        <span className="font-medium">{label}</span>
+    <div className={size === "lg" ? "mb-5 last:mb-0" : "mb-4 last:mb-0"}>
+      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+        <span className={size === "lg" ? "text-lg font-semibold" : "font-medium"}>{label}</span>
         <span className="tabular text-muted">
-          {Math.round(value)} {target ? `de ${target}` : ""} {unit}
+          <strong className={`font-semibold ${over ? "text-accent" : "text-foreground"}`}>{fmt(value)}</strong>
+          {target ? ` de ${fmt(target)}` : ""} {unit}
         </span>
       </div>
       {target ? (
-        <div className="h-2.5 overflow-hidden rounded-full bg-surface-2" aria-hidden>
+        <div className={`overflow-hidden rounded-full bg-surface-2 ${size === "lg" ? "h-3.5" : "h-2.5"}`} aria-hidden>
           <div
             className="bar-x h-full rounded-full"
-            style={{ width: `${pct}%`, background: over ? "var(--ring-kcal)" : color, "--i": index } as CSSProperties}
+            style={{ width: `${pct}%`, background: over ? "var(--accent)" : "var(--primary)", "--i": index } as CSSProperties}
           />
         </div>
       ) : null}
@@ -175,41 +178,16 @@ export function Progress({
   );
 }
 
-/** Marca do app: três anéis (calorias, proteína, passos) que se desenham ao abrir. */
+/** Marca do app: um símbolo simples e o nome. */
 export function Brand({ tagline }: { tagline?: string }) {
-  const rings = [
-    { r: 26, color: "var(--ring-kcal)", pct: 0.78 },
-    { r: 18, color: "var(--ring-protein)", pct: 0.62 },
-    { r: 10, color: "var(--ring-steps)", pct: 0.9 },
-  ];
   return (
-    <div className="rise mb-6 flex items-center gap-4">
-      <svg viewBox="0 0 64 64" width={64} height={64} className="-rotate-90 shrink-0" aria-hidden>
-        {rings.map((ring, i) => {
-          const c = 2 * Math.PI * ring.r;
-          return (
-            <g key={ring.r}>
-              <circle cx={32} cy={32} r={ring.r} fill="none" stroke={ring.color} strokeOpacity={0.18} strokeWidth={6} />
-              <circle
-                className="ring-arc"
-                cx={32}
-                cy={32}
-                r={ring.r}
-                fill="none"
-                stroke={ring.color}
-                strokeWidth={6}
-                strokeLinecap="round"
-                strokeDasharray={c}
-                strokeDashoffset={c * (1 - ring.pct)}
-                style={{ "--ring-c": c, "--i": i } as CSSProperties}
-              />
-            </g>
-          );
-        })}
-      </svg>
+    <div className="rise mb-8 flex items-center gap-3">
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground" aria-hidden>
+        <span className="text-2xl font-bold leading-none">S</span>
+      </span>
       <div>
         <p className="text-2xl font-bold tracking-tight">Survivor</p>
-        {tagline && <p className="text-sm text-muted">{tagline}</p>}
+        {tagline && <p className="text-muted">{tagline}</p>}
       </div>
     </div>
   );

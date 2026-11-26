@@ -2,8 +2,10 @@ import Link from "next/link";
 import { BottomNav, Card, LinkButton, Notice, Page, Progress } from "@/components/ui";
 import { Consistency } from "@/components/dashboard/consistency";
 import { CountUp } from "@/components/dashboard/count-up";
-import { DayClock, type ClockMeal } from "@/components/dashboard/day-clock";
-import { Rings } from "@/components/dashboard/rings";
+import { SinceLastMeal } from "@/components/dashboard/since-last-meal";
+import { FastingStatus } from "@/components/dashboard/fasting-status";
+import { fastingWarning, parseHHMM, protocolById } from "@/lib/fasting";
+import { liveFasting, loadFastingContext } from "@/lib/fasting-server";
 import { WeightChart } from "@/components/dashboard/weight-chart";
 import { requireOnboarded } from "@/lib/auth";
 import {
@@ -61,7 +63,7 @@ export default async function TodayPage() {
   const { from, to } = dayRange(today);
   const calendarFrom = dayRange(addDays(today, -(CALENDAR_DAYS - 1))).from;
 
-  const [goal, cautious, mealsRes, lastMealRes, stepsRes, weightsRes, historyRes, dizzyRes, streakRes, sleepRes, apneaRes] =
+  const [goal, cautious, mealsRes, lastMealRes, stepsRes, weightsRes, historyRes, dizzyRes, streakRes, sleepRes, apneaRes, fastingCtx, lowBpRes] =
     await Promise.all([
     getCurrentGoal(),
     isCautious(),
@@ -110,6 +112,12 @@ export default async function TodayPage() {
       .order("taken_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    loadFastingContext(profile),
+    supabase
+      .from("bp_logs")
+      .select("id", { count: "exact", head: true })
+      .gte("measured_at", dayRange(addDays(today, -2)).from)
+      .or("systolic.lt.100,diastolic.lt.60"),
   ]);
 
   const meals = (mealsRes.data ?? []) as MealRow[];
@@ -169,14 +177,6 @@ export default async function TodayPage() {
     return v !== undefined && v.kcal < 1500;
   }).length;
 
-  const clockMeals: ClockMeal[] = meals.map((m) => ({
-    id: m.id,
-    minutes: minutesOfDay(m.eaten_at),
-    time: formatTime(m.eaten_at),
-    label: MEAL_TYPE_LABEL[m.meal_type] ?? "Refeição",
-    kcal: Number(m.kcal),
-    items: m.meal_items.map((i) => i.name).join(", "),
-  }));
   const lastMealAt = lastMealRes.data?.eaten_at ?? null;
   const lastMealAgo = lastMealAt ? (now.getTime() - Date.parse(lastMealAt)) / 60000 : null;
 
@@ -221,10 +221,6 @@ export default async function TodayPage() {
   const apnea = apneaRes.data
     ? { risk: apneaRes.data.risk as "low" | "intermediate" | "high", label: RISK_TEXT[apneaRes.data.risk as "low" | "intermediate" | "high"].title.replace(" de apneia", "").toLowerCase() }
     : null;
-  // No relógio de hoje só entra o trecho depois da meia-noite.
-  const clockSleep = todaySleep
-    ? { from: todayISO(new Date(todaySleep.bedtime)) < today ? 0 : minutesOfDay(todaySleep.bedtime), to: minutesOfDay(todaySleep.wake_time) }
-    : null;
   // Sem a migração do sono aplicada, o cartão fica escondido em vez de falhar ao salvar.
   const sleepReady = !(sleepRes.error && isMissingTable(sleepRes.error));
   // De manhã, sem a noite registrada, o cartão de sono sobe para o topo.
@@ -241,6 +237,16 @@ export default async function TodayPage() {
       />
     </Card>
   );
+
+  // Jejum: só aparece para quem ativou; quem nunca configurou vê um convite discreto.
+  // A triagem é refeita a cada visita: um remédio novo suspende o jejum na hora.
+  const live = liveFasting(fastingCtx);
+  const fasting = live.active ? live.settings : null;
+  const fastingStart = fasting ? (parseHHMM(String(fasting.eating_start).slice(0, 5)) ?? 480) : 480;
+  const fastingAlert = fasting
+    ? fastingWarning({ dizzyLast7d: dizzyRes.count ?? 0, lowBpLast3d: (lowBpRes.count ?? 0) > 0, lowIntake3d: lowIntakeDays === 3 })
+    : null;
+  const showFastingInvite = fastingCtx.ready && !fastingCtx.settings;
 
   const remaining = goal ? goal.kcal - kcal : null;
   const hint = nextHint({ hour: Math.floor(nowMinutes / 60), meals: meals.length, kcal, protein, steps, goal, stepGoal });
@@ -263,54 +269,90 @@ export default async function TodayPage() {
 
       {goal && (
         <Card index={0}>
-          <Rings
-            center={{
-              label: remaining !== null && remaining < 0 ? "acima da meta" : "restam",
-              value: Math.abs(Math.round(remaining ?? 0)),
-              unit: "kcal",
-              over: remaining !== null && remaining < 0,
-            }}
-            rings={[
-              { key: "kcal", label: "Calorias", value: kcal, target: goal.kcal, unit: "kcal", color: "var(--ring-kcal)" },
-              { key: "protein", label: "Proteína", value: protein, target: goal.protein_g, unit: "g", color: "var(--ring-protein)" },
-              { key: "steps", label: "Passos", value: steps, target: stepGoal, unit: "", color: "var(--ring-steps)" },
-            ]}
-          />
+          <p className="text-muted">{remaining !== null && remaining < 0 ? "Acima da meta de calorias" : "Calorias que ainda cabem hoje"}</p>
+          <p className={`mb-5 text-[2.6rem] font-bold leading-tight tracking-tight ${remaining !== null && remaining < 0 ? "text-accent" : ""}`}>
+            <CountUp value={Math.abs(Math.round(remaining ?? 0))} /> <span className="text-2xl font-semibold">kcal</span>
+          </p>
+          <Progress size="lg" label="Calorias" value={kcal} target={goal.kcal} unit="kcal" index={0} />
+          <Progress size="lg" label="Proteína" value={protein} target={goal.protein_g} unit="g" index={1} />
+          <Progress size="lg" label="Passos" value={steps} target={stepGoal} unit="" index={2} />
           {hint && (
             <p
-              className={`rise mt-4 rounded-2xl px-4 py-3 text-sm ${
-                hint.tone === "good" ? "bg-primary-soft text-foreground" : "bg-surface-2 text-foreground"
-              }`}
-              style={{ "--i": 5 } as React.CSSProperties}
+              className={`rise mt-5 border-l-4 py-1 pl-4 ${hint.tone === "good" ? "border-primary" : "border-accent"}`}
+              style={{ "--i": 4 } as React.CSSProperties}
             >
-              {hint.tone === "good" ? "✓ " : ""}
               {hint.text}
             </p>
           )}
+          <details className="group mt-5 border-t border-border pt-4">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between font-medium">
+              Carboidrato, gordura e fibra
+              <span className="text-muted transition group-open:rotate-180" aria-hidden>
+                ▾
+              </span>
+            </summary>
+            <div className="pt-3">
+              <Progress label="Carboidrato" value={sum(meals, "carbs_g")} target={goal.carbs_g} unit="g" />
+              <Progress label="Gordura" value={sum(meals, "fat_g")} target={goal.fat_g} unit="g" />
+              <Progress label="Fibra" value={sum(meals, "fiber_g")} target={goal.fiber_g} unit="g" />
+              <Link href="/metas" className="mt-1 inline-block text-primary underline underline-offset-4">
+                Ver minhas metas e avisos
+              </Link>
+            </div>
+          </details>
         </Card>
       )}
 
-      <Card index={1} title="Seu dia" action={<Link href="/refeicao/nova" className="font-semibold text-primary">+ Refeição</Link>}>
-        <DayClock
-          meals={clockMeals}
-          nowMinutes={nowMinutes}
-          lastMealAgoMinutes={lastMealAgo}
-          lastMealAt={lastMealAt}
-          day={today}
-          sleep={clockSleep}
-        />
-        {meals.length === 0 && (
-          <div className="mt-4">
-            <LinkButton href="/refeicao/nova">Registrar refeição</LinkButton>
-          </div>
+      <Card index={1} title="Refeições de hoje">
+        <p className="mb-3 text-muted">
+          Última refeição: <strong className="text-foreground"><SinceLastMeal lastMealAt={lastMealAt} serverMinutes={lastMealAgo} day={today} /></strong>
+        </p>
+        {meals.length > 0 && (
+          <ul className="mb-4 divide-y divide-border border-y border-border">
+            {meals.map((m) => (
+              <li key={m.id}>
+                <Link href={`/refeicao/${m.id}`} className="flex min-h-14 items-center gap-3 py-3">
+                  <span className="tabular w-14 shrink-0 text-muted">{formatTime(m.eaten_at)}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold">{MEAL_TYPE_LABEL[m.meal_type] ?? "Refeição"}</span>
+                    <span className="line-clamp-2 block text-muted">{m.meal_items.map((i) => i.name).join(", ")}</span>
+                  </span>
+                  <span className="tabular shrink-0 font-semibold">{Math.round(Number(m.kcal))} kcal</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        <LinkButton href="/refeicao/nova">Registrar refeição</LinkButton>
+        {showFastingInvite && (
+          <Link href="/jejum" className="mt-4 flex min-h-11 items-center justify-between gap-3 border-t border-border pt-4 font-medium">
+            <span>Jejum intermitente: veja se é para você</span>
+            <span className="text-primary" aria-hidden>
+              →
+            </span>
+          </Link>
         )}
       </Card>
 
-      {goal && (
-        <Card index={2} title="Outros nutrientes" action={<Link href="/metas" className="text-muted underline">metas</Link>}>
-          <Progress label="Carboidrato" value={sum(meals, "carbs_g")} target={goal.carbs_g} unit="g" color="var(--ring-kcal)" index={0} />
-          <Progress label="Gordura" value={sum(meals, "fat_g")} target={goal.fat_g} unit="g" color="var(--night)" index={1} />
-          <Progress label="Fibra" value={sum(meals, "fiber_g")} target={goal.fiber_g} unit="g" color="var(--ring-steps)" index={2} />
+      {live.suspended && (
+        <Card index={2} title="Jejum suspenso">
+          <p className="mb-3">Seus dados mudaram e o jejum não está mais liberado para você. Coma normalmente.</p>
+          <Link href="/jejum" className="font-semibold text-primary underline underline-offset-4">
+            Ver o motivo
+          </Link>
+        </Card>
+      )}
+
+      {fasting && (
+        <Card index={2} title={`Jejum ${protocolById(fasting.protocol).id}`} action={<Link href="/jejum" className="text-primary underline underline-offset-4">ajustar</Link>}>
+          {fastingAlert && <p className="mb-4 border-l-4 border-accent py-1 pl-4">{fastingAlert}</p>}
+          <FastingStatus
+            protocol={fasting.protocol}
+            startMin={fastingStart}
+            lastMealAt={lastMealAt}
+            serverNowMin={nowMinutes}
+            serverSinceMin={lastMealAgo}
+          />
         </Card>
       )}
 

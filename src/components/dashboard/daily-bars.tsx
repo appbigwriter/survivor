@@ -53,8 +53,7 @@ export function DailyBars({
                 width={bw}
                 height={H - PAD.bottom - y(b.value)}
                 rx={Math.min(6, bw / 2)}
-                fill={color}
-                fillOpacity={good(b.value) ? 1 : 0.38}
+                fill={good(b.value) ? color : "var(--chart-muted)"}
                 style={{ "--i": i } as CSSProperties}
               >
                 <title>{`${b.day}: ${Math.round(b.value).toLocaleString("pt-BR")}`}</title>
@@ -62,7 +61,7 @@ export function DailyBars({
             ) : (
               <circle cx={cx} cy={H - PAD.bottom - 3} r={2} fill="var(--muted)" fillOpacity={0.4} />
             )}
-            <text x={cx} y={H - 6} textAnchor="middle" fontSize={10} fill="var(--muted)">
+            <text x={cx} y={H - 6} textAnchor="middle" fontSize={12} fill="var(--muted)">
               {weekday(b.day)}
             </text>
           </g>
@@ -71,7 +70,7 @@ export function DailyBars({
       {target !== null && (
         <g>
           <line x1={PAD.left} x2={W - PAD.right} y1={y(target)} y2={y(target)} stroke="var(--foreground)" strokeOpacity={0.55} strokeDasharray="4 4" />
-          <text x={W - PAD.right} y={y(target) - 5} textAnchor="end" fontSize={10} fontWeight={600} fill="var(--muted)">
+          <text x={W - PAD.right} y={y(target) - 5} textAnchor="end" fontSize={12} fontWeight={600} fill="var(--muted)">
             {targetLabel ?? `meta ${target.toLocaleString("pt-BR")}`}
           </text>
         </g>

@@ -20,7 +20,8 @@ export type NightSummary = {
   awake: number;
 };
 
-const QUALITY_COLOR = ["#c2410c", "#ea8a3c", "#c9a227", "#5aa77c", "#1f9a63"];
+// Como acordou: ruim em âmbar, regular em cinza, boa em verde.
+const QUALITY_COLOR = ["var(--accent)", "var(--accent)", "var(--chart-muted)", "var(--primary)", "var(--primary)"];
 
 // Controlado: o React 19 limpa o formulário depois de cada envio, e um erro não
 // deve apagar o que a pessoa já escolheu.
@@ -48,7 +49,7 @@ function Pills({
             className="peer sr-only"
             required
           />
-          <span className="flex min-h-11 items-center rounded-2xl border border-border bg-surface px-3.5 text-sm font-medium transition peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-focus-visible:ring-4 peer-focus-visible:ring-primary/30">
+          <span className="flex min-h-12 items-center rounded-xl border border-border bg-surface px-4 font-medium transition peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-focus-visible:ring-4 peer-focus-visible:ring-primary/30">
             {o.label}
           </span>
         </label>
@@ -113,7 +114,7 @@ function SleepForm({
             role="radio"
             aria-checked={night === v}
             onClick={() => setNight(v)}
-            className={`min-h-10 flex-1 rounded-xl text-sm font-semibold transition ${night === v ? "bg-surface shadow-[var(--shadow)]" : "text-muted"}`}
+            className={`min-h-11 flex-1 rounded-lg font-semibold transition ${night === v ? "bg-surface text-foreground ring-1 ring-border" : "text-muted"}`}
           >
             {label}
           </button>
@@ -185,13 +186,13 @@ function NightBars({ nights }: { nights: (NightSummary | null)[] }) {
         <div key={i} className="flex flex-1 flex-col items-center gap-1">
           <div className="relative flex h-20 w-full items-end justify-center">
             {/* faixa de 7 a 9 horas */}
-            <div className="absolute inset-x-0 rounded bg-night/10" style={{ bottom: `${(7 * 60 * 100) / maxH}%`, height: `${(2 * 60 * 100) / maxH}%` }} />
+            <div className="absolute inset-x-0 rounded bg-surface-2" style={{ bottom: `${(7 * 60 * 100) / maxH}%`, height: `${(2 * 60 * 100) / maxH}%` }} />
             {n ? (
               <div
                 className="bar-y relative w-full max-w-5 rounded-md"
                 style={{
                   height: `${Math.min(100, (n.asleepMin * 100) / maxH)}%`,
-                  background: n.quality ? QUALITY_COLOR[n.quality - 1] : "var(--night)",
+                  background: n.quality ? QUALITY_COLOR[n.quality - 1] : "var(--chart-muted)",
                   transformOrigin: "bottom",
                   "--i": i,
                 } as CSSProperties}
@@ -201,7 +202,7 @@ function NightBars({ nights }: { nights: (NightSummary | null)[] }) {
               <div className="relative h-1 w-1 rounded-full bg-muted/40" />
             )}
           </div>
-          <span className="text-xs font-semibold text-muted">{n?.weekday ?? "·"}</span>
+          <span className="text-sm font-semibold text-muted">{n?.weekday ?? "·"}</span>
         </div>
       ))}
     </div>
@@ -257,28 +258,24 @@ export function SleepCard({
         </button>
       </div>
       <div className="mb-4 mt-3 flex flex-wrap gap-2 text-sm">
-        <span className="rounded-full bg-surface-2 px-3 py-1">
+        <span className="rounded-full border border-border px-3 py-1">
           <strong>{efficiencyPct}%</strong> do tempo na cama dormindo
         </span>
         {today.quality && (
-          <span className="rounded-full px-3 py-1 font-medium text-white" style={{ background: QUALITY_COLOR[today.quality - 1] }}>
+          <span className="rounded-full border border-border px-3 py-1 font-medium">
             Acordou: {QUALITY_LABELS[today.quality - 1].toLowerCase()}
           </span>
         )}
       </div>
 
-      <p
-        className={`mb-4 rounded-2xl px-4 py-3 text-sm ${
-          verdict.tone === "good" ? "bg-primary-soft" : verdict.tone === "low" ? "bg-warning-bg text-warning-fg" : "bg-surface-2"
-        }`}
-      >
+      <p className={`mb-4 border-l-4 py-1 pl-4 ${verdict.tone === "good" ? "border-primary" : verdict.tone === "low" ? "border-accent" : "border-border"}`}>
         {verdict.text}
       </p>
 
       <NightBars nights={week} />
-      <p className="mt-1 text-xs text-muted">Faixa sombreada: 7 a 9 horas. Cor da barra: como você acordou.</p>
+      <p className="mt-2 text-sm text-muted">Faixa cinza: 7 a 9 horas. Verde: acordou bem; âmbar: acordou mal.</p>
 
-      {insight && <p className="rise mt-4 rounded-2xl bg-night/10 px-4 py-3 text-sm">{insight}</p>}
+      {insight && <p className="rise mt-4 border-l-4 border-primary py-1 pl-4">{insight}</p>}
 
       <div className="mt-4 border-t border-border pt-3 text-sm">
         {apnea ? (
