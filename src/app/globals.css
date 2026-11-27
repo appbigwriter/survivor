@@ -157,6 +157,65 @@ body {
   animation-delay: calc(var(--i, 0) * 15ms);
 }
 
+/* Logo: a trilha se desenha e o ponto aparece no fim do caminho. */
+@keyframes draw-trail {
+  from {
+    stroke-dashoffset: 132;
+  }
+}
+.logo-trail {
+  stroke-dasharray: 132;
+  animation: draw-trail 0.9s cubic-bezier(0.6, 0, 0.3, 1) 0.1s backwards;
+}
+.logo-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pop 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) 0.85s backwards;
+}
+
+/* Arcos e anéis se preenchendo: stroke-dasharray "parte total" e --len com o total.
+   Começa invisível para não mostrar a ponta arredondada parada antes de crescer. */
+@keyframes fill-arc {
+  from {
+    stroke-dasharray: 0 var(--len);
+    stroke-opacity: 0;
+  }
+  15% {
+    stroke-opacity: 1;
+  }
+}
+
+.arc-fill {
+  animation: fill-arc 1.3s cubic-bezier(0.3, 0.7, 0.2, 1) backwards;
+  animation-delay: calc(0.15s + var(--i, 0) * 90ms);
+  transition: stroke-dasharray 0.8s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+
+/* Toque: o elemento afunda um pouco e um fundo suave aparece. */
+.press {
+  transition:
+    transform 0.15s ease,
+    background-color 0.2s ease;
+}
+.press:active {
+  transform: scale(0.98);
+  background-color: var(--surface-2);
+}
+
+/* Botão "+": gira de leve ao passar o dedo ou o mouse e afunda ao tocar. */
+.plus {
+  transition: transform 0.25s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+.plus:hover svg {
+  transform: rotate(90deg);
+}
+.plus svg {
+  transition: transform 0.3s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+.plus:active {
+  transform: scale(0.9);
+}
+
 /* Troca de tela: a barra de baixo fica parada; o conteúdo faz um fade curto. */
 ::view-transition-old(root),
 ::view-transition-new(root) {

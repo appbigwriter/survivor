@@ -1,10 +1,16 @@
 import Link from "next/link";
-import { BottomNav, Card, LinkButton, Notice, Page, Progress } from "@/components/ui";
+import { BottomNav, Card, Notice, Page } from "@/components/ui";
+import { DaySummary } from "@/components/dashboard/day-summary";
+import { MealSlots } from "@/components/dashboard/meal-slots";
+import { mealSlots } from "@/lib/meal-slots";
+import { ActivityPanel } from "@/components/dashboard/activity-panel";
+import { activityStats, dayProgress } from "@/lib/activity";
+import { loadActivity } from "@/lib/activity-server";
 import { Consistency } from "@/components/dashboard/consistency";
 import { CountUp } from "@/components/dashboard/count-up";
 import { SinceLastMeal } from "@/components/dashboard/since-last-meal";
 import { FastingStatus } from "@/components/dashboard/fasting-status";
-import { fastingWarning, parseHHMM, protocolById } from "@/lib/fasting";
+import { fastingStats, fastingWarning, overnightFasts, parseHHMM, protocolById } from "@/lib/fasting";
 import { liveFasting, loadFastingContext } from "@/lib/fasting-server";
 import { WeightChart } from "@/components/dashboard/weight-chart";
 import { requireOnboarded } from "@/lib/auth";
@@ -20,7 +26,7 @@ import {
   type DayScore,
 } from "@/lib/dashboard";
 import { getCurrentGoal, isCautious } from "@/lib/data";
-import { addDays, dayRange, formatDay, formatTime, MEAL_TYPE_LABEL, minutesOfDay, todayISO } from "@/lib/dates";
+import { addDays, dayRange, formatDay, formatTime, minutesOfDay, todayISO } from "@/lib/dates";
 import { isMissingTable } from "@/lib/accounts";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { QuickLog } from "./quick-log";
@@ -63,7 +69,7 @@ export default async function TodayPage() {
   const { from, to } = dayRange(today);
   const calendarFrom = dayRange(addDays(today, -(CALENDAR_DAYS - 1))).from;
 
-  const [goal, cautious, mealsRes, lastMealRes, stepsRes, weightsRes, historyRes, dizzyRes, streakRes, sleepRes, apneaRes, fastingCtx, lowBpRes] =
+  const [goal, cautious, mealsRes, lastMealRes, stepsRes, weightsRes, historyRes, dizzyRes, streakRes, sleepRes, apneaRes, fastingCtx, activityCtx, lowBpRes] =
     await Promise.all([
     getCurrentGoal(),
     isCautious(),
@@ -113,6 +119,7 @@ export default async function TodayPage() {
       .limit(1)
       .maybeSingle(),
     loadFastingContext(profile),
+    loadActivity(profile, today),
     supabase
       .from("bp_logs")
       .select("id", { count: "exact", head: true })
@@ -247,8 +254,14 @@ export default async function TodayPage() {
     ? fastingWarning({ dizzyLast7d: dizzyRes.count ?? 0, lowBpLast3d: (lowBpRes.count ?? 0) > 0, lowIntake3d: lowIntakeDays === 3 })
     : null;
   const showFastingInvite = fastingCtx.ready && !fastingCtx.settings;
+  // Jejum de cada noite, das refeições dos últimos meses mais as de hoje.
+  const fasts = fasting
+    ? overnightFasts(
+        [...(streakRes.data ?? []), ...meals].map((m) => ({ at: m.eaten_at, day: todayISO(new Date(m.eaten_at)) })),
+      )
+    : new Map<string, number>();
+  const fastStats = fasting ? fastingStats(fasts, protocolById(fasting.protocol).fastH, today, addDays) : null;
 
-  const remaining = goal ? goal.kcal - kcal : null;
   const hint = nextHint({ hour: Math.floor(nowMinutes / 60), meals: meals.length, kcal, protein, steps, goal, stepGoal });
   const firstName = profile.display_name.split(" ")[0];
   const firstNameNice = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
@@ -268,14 +281,25 @@ export default async function TodayPage() {
       {morningAsk && sleepCard}
 
       {goal && (
-        <Card index={0}>
-          <p className="text-muted">{remaining !== null && remaining < 0 ? "Acima da meta de calorias" : "Calorias que ainda cabem hoje"}</p>
-          <p className={`mb-5 text-[2.6rem] font-bold leading-tight tracking-tight ${remaining !== null && remaining < 0 ? "text-accent" : ""}`}>
-            <CountUp value={Math.abs(Math.round(remaining ?? 0))} /> <span className="text-2xl font-semibold">kcal</span>
-          </p>
-          <Progress size="lg" label="Calorias" value={kcal} target={goal.kcal} unit="kcal" index={0} />
-          <Progress size="lg" label="Proteína" value={protein} target={goal.protein_g} unit="g" index={1} />
-          <Progress size="lg" label="Passos" value={steps} target={stepGoal} unit="" index={2} />
+        <Card
+          index={0}
+          title="Resumo do dia"
+          action={
+            <Link href="/metas" className="inline-flex min-h-11 items-center font-semibold text-primary">
+              Metas e avisos ›
+            </Link>
+          }
+        >
+          <DaySummary
+            kcal={kcal}
+            kcalGoal={goal.kcal}
+            macros={[
+              { label: "Proteína", value: protein, target: goal.protein_g, okOver: true },
+              { label: "Carboidrato", value: sum(meals, "carbs_g"), target: goal.carbs_g },
+              { label: "Gordura", value: sum(meals, "fat_g"), target: goal.fat_g },
+              { label: "Fibra", value: sum(meals, "fiber_g"), target: goal.fiber_g, okOver: true },
+            ]}
+          />
           {hint && (
             <p
               className={`rise mt-5 border-l-4 py-1 pl-4 ${hint.tone === "good" ? "border-primary" : "border-accent"}`}
@@ -284,48 +308,27 @@ export default async function TodayPage() {
               {hint.text}
             </p>
           )}
-          <details className="group mt-5 border-t border-border pt-4">
-            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between font-medium">
-              Carboidrato, gordura e fibra
-              <span className="text-muted transition group-open:rotate-180" aria-hidden>
-                ▾
-              </span>
-            </summary>
-            <div className="pt-3">
-              <Progress label="Carboidrato" value={sum(meals, "carbs_g")} target={goal.carbs_g} unit="g" />
-              <Progress label="Gordura" value={sum(meals, "fat_g")} target={goal.fat_g} unit="g" />
-              <Progress label="Fibra" value={sum(meals, "fiber_g")} target={goal.fiber_g} unit="g" />
-              <Link href="/metas" className="mt-1 inline-block text-primary underline underline-offset-4">
-                Ver minhas metas e avisos
-              </Link>
-            </div>
-          </details>
         </Card>
       )}
 
-      <Card index={1} title="Refeições de hoje">
-        <p className="mb-3 text-muted">
-          Última refeição: <strong className="text-foreground"><SinceLastMeal lastMealAt={lastMealAt} serverMinutes={lastMealAgo} day={today} /></strong>
-        </p>
-        {meals.length > 0 && (
-          <ul className="mb-4 divide-y divide-border border-y border-border">
-            {meals.map((m) => (
-              <li key={m.id}>
-                <Link href={`/refeicao/${m.id}`} className="flex min-h-14 items-center gap-3 py-3">
-                  <span className="tabular w-14 shrink-0 text-muted">{formatTime(m.eaten_at)}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-semibold">{MEAL_TYPE_LABEL[m.meal_type] ?? "Refeição"}</span>
-                    <span className="line-clamp-2 block text-muted">{m.meal_items.map((i) => i.name).join(", ")}</span>
-                  </span>
-                  <span className="tabular shrink-0 font-semibold">{Math.round(Number(m.kcal))} kcal</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-        <LinkButton href="/refeicao/nova">Registrar refeição</LinkButton>
+      <Card
+        index={1}
+        title="Refeições"
+        action={
+          <span className="text-muted">
+            Última: <strong className="text-foreground"><SinceLastMeal lastMealAt={lastMealAt} serverMinutes={lastMealAgo} day={today} /></strong>
+          </span>
+        }
+      >
+        <MealSlots
+          slots={mealSlots(
+            meals.map((m) => ({ id: m.id, eaten_at: m.eaten_at, meal_type: m.meal_type, kcal: Number(m.kcal), items: m.meal_items.map((i) => i.name) })),
+            goal?.kcal ?? null,
+            nowMinutes >= 20 * 60,
+          )}
+        />
         {showFastingInvite && (
-          <Link href="/jejum" className="mt-4 flex min-h-11 items-center justify-between gap-3 border-t border-border pt-4 font-medium">
+          <Link href="/jejum" className="press -mx-2 mt-4 flex min-h-11 items-center justify-between gap-3 rounded-xl border-t border-border px-2 pt-4 font-medium">
             <span>Jejum intermitente: veja se é para você</span>
             <span className="text-primary" aria-hidden>
               →
@@ -344,7 +347,7 @@ export default async function TodayPage() {
       )}
 
       {fasting && (
-        <Card index={2} title={`Jejum ${protocolById(fasting.protocol).id}`} action={<Link href="/jejum" className="text-primary underline underline-offset-4">ajustar</Link>}>
+        <Card index={2} title={`Jejum ${protocolById(fasting.protocol).id}`} action={<Link href="/jejum" className="inline-flex min-h-11 items-center font-semibold text-primary">Ajustar ›</Link>}>
           {fastingAlert && <p className="mb-4 border-l-4 border-accent py-1 pl-4">{fastingAlert}</p>}
           <FastingStatus
             protocol={fasting.protocol}
@@ -352,11 +355,33 @@ export default async function TodayPage() {
             lastMealAt={lastMealAt}
             serverNowMin={nowMinutes}
             serverSinceMin={lastMealAgo}
+            todayFastH={fasts.get(today) ?? null}
+            stats={fastStats!}
           />
         </Card>
       )}
 
-      <Card index={3} title="Registrar">
+      <Card
+        index={3}
+        title="Atividade física"
+        action={
+          <Link href="/atividade" className="inline-flex min-h-11 items-center font-semibold text-primary">
+            Plano e treino ›
+          </Link>
+        }
+      >
+        <ActivityPanel
+          {...dayProgress(activityCtx.plan, today, activityCtx.sessions, Math.max(steps, activityCtx.stepsByDay.get(today) ?? 0))}
+          steps={steps}
+          stepGoal={stepGoal}
+          stats={activityStats(activityCtx.plan, today, activityCtx.sessions, activityCtx.stepsByDay, addDays)}
+        />
+        <Link href="/atividade" className="press mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-primary-soft font-semibold text-primary">
+          Registrar atividade
+        </Link>
+      </Card>
+
+      <Card index={4} title="Registrar">
         <QuickLog cautious={cautious} manualSteps={manualSteps} />
       </Card>
 

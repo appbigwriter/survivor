@@ -27,6 +27,11 @@ export default function PrivacyPage() {
             Dados de saúde são dados pessoais sensíveis e só são tratados com o seu consentimento
             específico.
           </p>
+          <p>
+            Se você conectar o iPhone, um atalho que você mesmo monta envia do app Saúde os passos, a distância, a energia gasta,
+            o peso, o sono e os treinos. O envio usa um código pessoal; guardamos só uma versão embaralhada (hash) dele, e você pode
+            desconectar a qualquer momento na tela Conta.
+          </p>
           <h2 className="text-lg font-semibold">Para que usamos</h2>
           <p>
             Para calcular suas metas diárias, mostrar sua evolução, gerar avisos de segurança e

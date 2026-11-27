@@ -14,6 +14,8 @@ export default async function AccountPage() {
           <LinkButton href="/metas" variant="secondary">Minhas metas</LinkButton>
           <LinkButton href="/anamnese" variant="secondary">Atualizar meus dados e remédios</LinkButton>
           <LinkButton href="/jejum" variant="secondary">Jejum intermitente</LinkButton>
+          <LinkButton href="/atividade" variant="secondary">Atividade física</LinkButton>
+          <LinkButton href="/conta/celular" variant="secondary">Conectar o iPhone</LinkButton>
           <form action={signOut}>
             <Button type="submit" variant="secondary" className="w-full">Sair</Button>
           </form>

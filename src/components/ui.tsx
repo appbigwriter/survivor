@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ViewTransition, type ComponentProps, type CSSProperties, type ReactNode } from "react";
+import { LOGO_BG, LOGO_DOT, LOGO_PATH } from "@/lib/logo";
 
 export { BottomNav } from "./nav";
 
@@ -178,13 +179,15 @@ export function Progress({
   );
 }
 
-/** Marca do app: um símbolo simples e o nome. */
+/** Marca do app: o logo Trilha e o nome. As cores são fixas nos dois temas, como no ícone. */
 export function Brand({ tagline }: { tagline?: string }) {
   return (
     <div className="rise mb-8 flex items-center gap-3">
-      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground" aria-hidden>
-        <span className="text-2xl font-bold leading-none">S</span>
-      </span>
+      <svg viewBox="0 0 96 96" className="size-12 shrink-0" aria-hidden>
+        <rect width="96" height="96" rx="24" fill={LOGO_BG} />
+        <path d={LOGO_PATH} fill="none" stroke="#fff" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" className="logo-trail" />
+        <circle cx="68" cy="24" r="5.5" fill={LOGO_DOT} className="logo-dot" />
+      </svg>
       <div>
         <p className="text-2xl font-bold tracking-tight">Survivor</p>
         {tagline && <p className="text-muted">{tagline}</p>}

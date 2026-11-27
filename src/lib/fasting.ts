@@ -4,6 +4,8 @@
 // O app não pede para "iniciar" e "parar" o jejum: o tempo de jejum é o
 // intervalo desde a última refeição registrada.
 
+import { addDays, minutesOfDay } from "./dates";
+
 export const PROTOCOLS = [
   { id: "12:12", fastH: 12, eatH: 12, label: "12 horas de jejum", hint: "Para começar: é quase só não comer depois do jantar." },
   { id: "14:10", fastH: 14, eatH: 10, label: "14 horas de jejum", hint: "Depois de 1 ou 2 semanas bem no 12:12." },
@@ -129,7 +131,10 @@ export function fastingNow(nowMin: number, sinceMealMin: number | null, protocol
  * (provavelmente um registro esquecido), ficam de fora.
  */
 export function overnightFasts(meals: { at: string; day: string }[]): Map<string, number> {
-  const sorted = [...meals].sort((a, b) => (a.at < b.at ? -1 : 1));
+  // Uma ceia de madrugada (antes das 4h) ainda é a noite anterior, não a primeira refeição do dia.
+  const sorted = [...meals]
+    .map((m) => (minutesOfDay(m.at) < 4 * 60 ? { ...m, day: addDays(m.day, -1) } : m))
+    .sort((a, b) => (a.at < b.at ? -1 : 1));
   const result = new Map<string, number>();
   for (let i = 1; i < sorted.length; i++) {
     const cur = sorted[i];
@@ -139,6 +144,52 @@ export function overnightFasts(meals: { at: string; day: string }[]): Map<string
     if (hours > 0 && hours <= MAX_PLAUSIBLE_FAST_H) result.set(cur.day, hours);
   }
   return result;
+}
+
+/**
+ * Fases aproximadas do jejum. Variam de pessoa para pessoa; o texto evita
+ * promessas (nada de "desintoxicar" ou "autofagia garantida").
+ */
+export const FAST_PHASES = [
+  { h: 4, title: "Digestão concluída", text: "O corpo terminou de usar a última refeição e o açúcar do sangue se estabiliza." },
+  { h: 8, title: "Reserva do fígado", text: "A energia passa a vir mais do estoque guardado no fígado." },
+  { h: 12, title: "Mais gordura como energia", text: "Aos poucos, a gordura vira uma parte maior do combustível." },
+  { h: 14, title: "Meta do 14:10", text: "Você completou um jejum de 14 horas." },
+  { h: 16, title: "Meta do 16:8", text: "Você completou um jejum de 16 horas." },
+] as const;
+
+/** Fases que cabem no protocolo (o 12:12 mostra até 12 h). */
+export function phasesFor(fastH: number) {
+  return FAST_PHASES.filter((p) => p.h <= fastH);
+}
+
+export type FastDay = { day: string; hours: number | null; ok: boolean };
+
+/**
+ * Constância do jejum: os últimos 7 dias, quantos bateram a meta, a sequência
+ * atual e a média. Hoje só entra se a primeira refeição do dia já aconteceu.
+ */
+export function fastingStats(fasts: Map<string, number>, targetH: number, today: string, addDays: (d: string, n: number) => string) {
+  const last7: FastDay[] = Array.from({ length: 7 }, (_, i) => {
+    const day = addDays(today, -(6 - i));
+    const hours = fasts.get(day) ?? null;
+    return { day, hours, ok: hours !== null && hours >= targetH };
+  });
+  const measured = last7.filter((d) => d.hours !== null);
+  let streak = 0;
+  // Sem a primeira refeição de hoje ainda, a contagem começa em ontem.
+  for (let i = fasts.has(today) ? 0 : 1; i < 120; i++) {
+    const h = fasts.get(addDays(today, -i));
+    if (h === undefined || h < targetH) break;
+    streak++;
+  }
+  return {
+    last7,
+    onTarget7: last7.filter((d) => d.ok).length,
+    measured7: measured.length,
+    streak,
+    avg7: measured.length ? measured.reduce((a, d) => a + d.hours!, 0) / measured.length : null,
+  };
 }
 
 /** Sinais para pausar ou encurtar o jejum. */

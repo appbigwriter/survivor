@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { eatingWindow, fastingEligibility, fastingNow, fastingWarning, insideWindow, overnightFasts, type EligibilityInput } from "./fasting";
+import { addDays } from "./dates";
+import {
+  eatingWindow,
+  fastingEligibility,
+  fastingNow,
+  fastingStats,
+  fastingWarning,
+  insideWindow,
+  overnightFasts,
+  phasesFor,
+  type EligibilityInput,
+} from "./fasting";
 
 const base: EligibilityInput = {
   ageYears: 45,
@@ -88,9 +99,44 @@ describe("jejum de cada noite", () => {
   });
 });
 
+describe("ceia de madrugada", () => {
+  it("conta como a noite anterior, não como o café do dia", () => {
+    const meals = [
+      { at: "2026-11-24T23:00:00.000Z", day: "2026-11-24" }, // 20:00
+      { at: "2026-11-25T03:30:00.000Z", day: "2026-11-25" }, // 00:30 do dia 25
+      { at: "2026-11-25T11:00:00.000Z", day: "2026-11-25" }, // 08:00
+    ];
+    expect(overnightFasts(meals).get("2026-11-25")).toBe(7.5);
+  });
+});
+
 describe("avisos", () => {
   it("tontura com pressão baixa manda pausar", () => {
     expect(fastingWarning({ dizzyLast7d: 1, lowBpLast3d: true, lowIntake3d: false })).toContain("Pause");
     expect(fastingWarning({ dizzyLast7d: 0, lowBpLast3d: false, lowIntake3d: false })).toBeNull();
+  });
+});
+
+describe("fases e constância", () => {
+  it("mostra só as fases do protocolo", () => {
+    expect(phasesFor(12).map((p) => p.h)).toEqual([4, 8, 12]);
+    expect(phasesFor(16).map((p) => p.h)).toEqual([4, 8, 12, 14, 16]);
+  });
+
+  it("conta a semana, a sequência e a média", () => {
+    const fasts = new Map([
+      ["2026-11-20", 13],
+      ["2026-11-21", 11],
+      ["2026-11-22", 12.5],
+      ["2026-11-23", 12],
+      ["2026-11-25", 14],
+    ]);
+    const s = fastingStats(fasts, 12, "2026-11-26", addDays);
+    expect(s.last7.map((d) => d.day)[0]).toBe("2026-11-20");
+    expect(s.onTarget7).toBe(4);
+    expect(s.measured7).toBe(5);
+    // Hoje ainda sem a primeira refeição: conta de ontem para trás; o dia 24 sem dado interrompe.
+    expect(s.streak).toBe(1);
+    expect(s.avg7).toBeCloseTo(12.5);
   });
 });

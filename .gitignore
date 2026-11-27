@@ -47,3 +47,6 @@ next-env.d.ts
 .env.production
 .env.test
 
+# Credenciais e scripts temporários de teste
+*.local.md
+scripts/.*.tmp.mjs

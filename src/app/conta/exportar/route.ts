@@ -12,6 +12,8 @@ const TABLES = [
   "goals",
   "weight_logs",
   "step_logs",
+  "activity_plans",
+  "activity_sessions",
   "bp_logs",
   "symptom_logs",
   "meals",
