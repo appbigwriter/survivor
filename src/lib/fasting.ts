@@ -4,7 +4,7 @@
 // O app não pede para "iniciar" e "parar" o jejum: o tempo de jejum é o
 // intervalo desde a última refeição registrada.
 
-import { addDays, minutesOfDay } from "./dates";
+import { addDays, minutesOfDay, todayISO } from "./dates";
 
 export const PROTOCOLS = [
   { id: "12:12", fastH: 12, eatH: 12, label: "12 horas de jejum", hint: "Para começar: é quase só não comer depois do jantar." },
@@ -108,21 +108,70 @@ export function insideWindow(nowMin: number, w: { start: number; end: number }):
 }
 
 export type FastingNow = {
-  /** "eating": dentro da janela; "fasting": fora dela. */
+  /** "eating": comendo dentro da janela; "fasting": em jejum. */
   phase: "eating" | "fasting";
+  /**
+   * Por que está em jejum: "window" (fora da janela), "closed" (a última
+   * refeição foi marcada como a última do dia) ou "waiting" (a janela abriu,
+   * mas a primeira refeição ainda não foi registrada). null comendo.
+   */
+  reason: "window" | "closed" | "waiting" | null;
   /** Minutos desde a última refeição (null se não houver nos últimos dias). */
   sinceMealMin: number | null;
   targetMin: number;
-  /** Minutos até a janela abrir (no jejum) ou fechar (comendo). */
+  /** Minutos até a janela abrir (fora dela) ou fechar (dentro dela). */
   untilChangeMin: number;
 };
 
-export function fastingNow(nowMin: number, sinceMealMin: number | null, protocol: ProtocolId, startMin: number): FastingNow {
+/**
+ * O jejum começa e termina pelas refeições: a primeira refeição depois do
+ * jejum o encerra, e a refeição marcada como última do dia o inicia na hora.
+ * Sem marcação, o jejum começa quando a janela fecha.
+ */
+export function fastingNow(
+  nowMin: number,
+  sinceMealMin: number | null,
+  protocol: ProtocolId,
+  startMin: number,
+  lastMealStartsFast = false,
+): FastingNow {
   const p = protocolById(protocol);
   const w = eatingWindow(protocol, startMin);
-  const eating = insideWindow(nowMin, w);
-  const untilChangeMin = eating ? (w.end - nowMin + 1440) % 1440 || 1440 : (w.start - nowMin + 1440) % 1440;
-  return { phase: eating ? "eating" : "fasting", sinceMealMin, targetMin: p.fastH * 60, untilChangeMin };
+  const inside = insideWindow(nowMin, w);
+  const untilChangeMin = inside ? (w.end - nowMin + 1440) % 1440 || 1440 : (w.start - nowMin + 1440) % 1440;
+  // Dentro da janela: minutos desde que ela abriu. Uma refeição mais antiga que isso é de antes da janela.
+  const sinceOpen = (nowMin - w.start + 1440) % 1440;
+  let reason: FastingNow["reason"] = null;
+  if (!inside) reason = "window";
+  else if (sinceMealMin !== null && sinceMealMin <= sinceOpen && lastMealStartsFast) reason = "closed";
+  else if (sinceMealMin === null || sinceMealMin > sinceOpen) reason = "waiting";
+  return { phase: reason ? "fasting" : "eating", reason, sinceMealMin, targetMin: p.fastH * 60, untilChangeMin };
+}
+
+/**
+ * O que uma refeição nova faz com o jejum, para mostrar no formulário.
+ * `previousAt` é a refeição anterior ao horário escolhido.
+ */
+export function mealFastingEffect(at: Date, previousAt: Date | null, targetH: number) {
+  const gapH = previousAt ? (at.getTime() - previousAt.getTime()) / 3_600_000 : null;
+  // Como em overnightFasts: só a primeira refeição do dia encerra o jejum (o dia vira às 4h).
+  const fastDay = (d: Date) => todayISO(new Date(d.getTime() - 4 * 3_600_000));
+  const first = previousAt !== null && fastDay(previousAt) < fastDay(at);
+  const ends = first && gapH !== null && gapH > 0 && gapH <= MAX_PLAUSIBLE_FAST_H ? { hours: gapH, reached: gapH >= targetH } : null;
+  return { ends, targetEnd: new Date(at.getTime() + targetH * 3_600_000) };
+}
+
+/** Sugere marcar como última do dia: jantar, ceia, ou a 90 min ou menos do fim da janela. */
+export function suggestStartsFast(mealType: string, atMin: number, protocol: ProtocolId, startMin: number): boolean {
+  if (mealType === "dinner" || mealType === "supper") return true;
+  const w = eatingWindow(protocol, startMin);
+  if (!insideWindow(atMin, w)) {
+    // Fora da janela: depois do fim (comeu tarde) sugere; antes do início (cedo) não.
+    const afterEnd = (atMin - (w.end % 1440) + 1440) % 1440;
+    const beforeStart = (w.start - atMin + 1440) % 1440;
+    return afterEnd < beforeStart;
+  }
+  return (w.end - atMin + 1440) % 1440 <= 90;
 }
 
 /**

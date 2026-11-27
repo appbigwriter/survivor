@@ -53,9 +53,34 @@ export async function logSleep(_prev: SleepState, formData: FormData): Promise<S
     console.error("Falha ao salvar sono:", error);
     return { error: "Não foi possível salvar o sono. Tente de novo." };
   }
+  // A noite foi registrada: o "Iniciar sono" em aberto, se houver, termina aqui.
+  await supabase.from("sleep_starts").delete().eq("user_id", profile.id);
   revalidatePath("/hoje");
   revalidatePath("/historico");
   return { ok: "Noite registrada.", saved: Date.now() };
+}
+
+/** "Iniciar sono": guarda a hora de deitar até a pessoa tocar em "Acordei". */
+export async function startSleep(): Promise<{ error?: string }> {
+  const profile = await requireOnboarded();
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("sleep_starts")
+    .upsert({ user_id: profile.id, started_at: new Date().toISOString() }, { onConflict: "user_id" });
+  if (error) {
+    console.error("Falha ao iniciar sono:", error);
+    return { error: "Não foi possível marcar a hora de dormir. Tente de novo." };
+  }
+  revalidatePath("/hoje");
+  return {};
+}
+
+/** Desfaz um "Iniciar sono" tocado sem querer. */
+export async function cancelSleep(): Promise<void> {
+  const profile = await requireOnboarded();
+  const supabase = await createSupabaseServerClient();
+  await supabase.from("sleep_starts").delete().eq("user_id", profile.id);
+  revalidatePath("/hoje");
 }
 
 export type StopBangState = { error?: string; score?: number; risk?: "low" | "intermediate" | "high" };

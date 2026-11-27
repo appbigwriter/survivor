@@ -5,8 +5,9 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { AiError, systemAnalyzer } from "@/lib/ai/providers";
 import { nutrientsSchema, type Nutrients } from "@/lib/ai/meal-schema";
+import { isMissingColumn } from "@/lib/accounts";
 import { requireOnboarded } from "@/lib/auth";
-import { dayRange, todayISO } from "@/lib/dates";
+import { addDays, dayRange, todayISO } from "@/lib/dates";
 import { env } from "@/lib/env";
 import { foodPer100g, pickMatch, scale, total, type FoodRow } from "@/lib/food/nutrients";
 import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
@@ -140,6 +141,9 @@ export async function analyzeMealText(_prev: AnalyzeState, formData: FormData): 
 const saveSchema = z.object({
   meal_type: z.enum(["breakfast", "lunch", "snack", "dinner", "supper"]),
   input_text: z.string().max(1500),
+  day: z.enum(["today", "yesterday"]),
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Informe o horário da refeição."),
+  starts_fast: z.boolean(),
   items: z
     .array(
       z.object({
@@ -161,6 +165,10 @@ export async function saveMeal(input: SaveMealInput): Promise<{ error?: string }
   const parsed = saveSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const d = parsed.data;
+  // Horário de Brasília (UTC-3, sem horário de verão).
+  const day = d.day === "today" ? todayISO() : addDays(todayISO(), -1);
+  const eatenAt = new Date(`${day}T${d.time}:00-03:00`);
+  if (eatenAt.getTime() > Date.now() + 5 * 60_000) return { error: "Esse horário ainda não chegou. Confira a hora da refeição." };
   const supabase = await createSupabaseServerClient();
 
   // Para itens da tabela, os valores vêm do banco, não do navegador.
@@ -193,17 +201,21 @@ export async function saveMeal(input: SaveMealInput): Promise<{ error?: string }
 
   const t = total(rows.map((r) => ({ kcal: r.kcal, protein_g: r.protein_g, fat_g: r.fat_g, carbs_g: r.carbs_g, fiber_g: r.fiber_g, sodium_mg: r.sodium_mg })));
 
-  const { data: meal, error } = await supabase
+  const mealRow = {
+    user_id: profile.id,
+    meal_type: d.meal_type,
+    input_mode: "text",
+    input_text: d.input_text || null,
+    eaten_at: eatenAt.toISOString(),
+    ...t,
+  };
+  let { data: meal, error } = await supabase
     .from("meals")
-    .insert({
-      user_id: profile.id,
-      meal_type: d.meal_type,
-      input_mode: "text",
-      input_text: d.input_text || null,
-      ...t,
-    })
+    .insert({ ...mealRow, starts_fast: d.starts_fast })
     .select("id")
     .single();
+  // Sem a migração 0006, salva a refeição sem a marca de última do dia.
+  if (error && isMissingColumn(error)) ({ data: meal, error } = await supabase.from("meals").insert(mealRow).select("id").single());
   if (error || !meal) return { error: "Não foi possível salvar a refeição." };
 
   const { error: itemsError } = await supabase

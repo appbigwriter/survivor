@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties } from "react";
-import { formatDuration, minutesOfDay } from "@/lib/dates";
+import { formatDuration, formatTime, minutesOfDay } from "@/lib/dates";
 import {
   eatingWindow,
   fastingNow,
@@ -27,6 +27,7 @@ export function FastingStatus({
   protocol,
   startMin,
   lastMealAt,
+  lastMealStartsFast = false,
   serverNowMin,
   serverSinceMin,
   todayFastH,
@@ -35,6 +36,8 @@ export function FastingStatus({
   protocol: ProtocolId;
   startMin: number;
   lastMealAt: string | null;
+  /** A última refeição foi marcada como a última do dia: o jejum já começou. */
+  lastMealStartsFast?: boolean;
   serverNowMin: number;
   serverSinceMin: number | null;
   /** Jejum que terminou com a primeira refeição de hoje, em horas (null se ainda não comeu hoje). */
@@ -55,7 +58,7 @@ export function FastingStatus({
   }, [lastMealAt]);
 
   const p = protocolById(protocol);
-  const f = fastingNow(now.min, now.since, protocol, startMin);
+  const f = fastingNow(now.min, now.since, protocol, startMin, lastMealStartsFast);
   const w = eatingWindow(protocol, startMin);
   const phases = phasesFor(p.fastH);
 
@@ -98,8 +101,16 @@ export function FastingStatus({
           <p className="text-sm text-muted">Meta</p>
         </div>
         <div className="text-right">
-          <p className="tabular text-xl font-bold">{fasting ? formatHHMM(w.start) : formatHHMM(w.end)}</p>
-          <p className="text-sm text-muted">{fasting ? `Janela abre em ${formatDuration(f.untilChangeMin)}` : `Janela fecha em ${formatDuration(f.untilChangeMin)}`}</p>
+          <p className="tabular text-xl font-bold">{f.reason === "window" || f.reason === "waiting" ? formatHHMM(w.start) : f.reason === "closed" && lastMealAt ? formatTime(lastMealAt) : formatHHMM(w.end)}</p>
+          <p className="text-sm text-muted">
+            {f.reason === "window"
+              ? `Janela abre em ${formatDuration(f.untilChangeMin)}`
+              : f.reason === "waiting"
+                ? "Janela aberta"
+                : f.reason === "closed"
+                  ? "Você encerrou o dia"
+                  : `Janela fecha em ${formatDuration(f.untilChangeMin)}`}
+          </p>
         </div>
       </div>
 
@@ -132,6 +143,9 @@ export function FastingStatus({
         })}
       </ul>
       {reached && fasting && <p className="mb-5 border-l-4 border-primary py-1 pl-4">Meta cumprida. Se tiver fome antes da janela abrir, pode comer.</p>}
+      {f.reason === "waiting" && !reached && (
+        <p className="mb-5 text-muted">A janela já abriu. O jejum termina quando você registrar a primeira refeição.</p>
+      )}
       {!fasting && done.length === 0 && todayFastH === null && (
         <p className="mb-5 text-muted">O jejum de hoje aparece quando você registrar a primeira refeição do dia.</p>
       )}

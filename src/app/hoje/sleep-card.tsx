@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState, type CSSProperties, type ReactNode } from "react";
+import { useActionState, useEffect, useState, useTransition, type CSSProperties, type ReactNode } from "react";
 import { Button, Notice } from "@/components/ui";
-import { formatDuration } from "@/lib/dates";
+import { formatDuration, formatTime, minutesOfDay } from "@/lib/dates";
+import { formatHHMM } from "@/lib/fasting";
 import { AWAKE_OPTIONS, LATENCY_OPTIONS, nightVerdict, QUALITY_LABELS } from "@/lib/sleep";
-import { logSleep, type SleepState } from "../sono/actions";
+import { cancelSleep, logSleep, startSleep, type SleepState } from "../sono/actions";
 
 export type NightSummary = {
   night: string;
@@ -78,11 +79,14 @@ function minutesBetween(bed: string, wake: string) {
 
 function SleepForm({
   initial,
+  times,
   defaultNight,
   onSaved,
   onCancel,
 }: {
   initial: NightSummary | null;
+  /** Horários já conhecidos (do "Iniciar sono" e do "Acordei"). */
+  times?: { bed: string; wake: string };
   defaultNight: "today" | "yesterday";
   onSaved: () => void;
   onCancel?: () => void;
@@ -93,8 +97,8 @@ function SleepForm({
     return r;
   }, {});
   const [night, setNight] = useState(defaultNight);
-  const [bed, setBed] = useState(initial?.bed ?? "23:00");
-  const [wake, setWake] = useState(initial?.wake ?? "07:00");
+  const [bed, setBed] = useState(times?.bed ?? initial?.bed ?? "23:00");
+  const [wake, setWake] = useState(times?.wake ?? initial?.wake ?? "07:00");
   const [latency, setLatency] = useState<number | undefined>(initial?.latency ?? 10);
   const [awake, setAwake] = useState<number | undefined>(initial?.awake ?? 0);
   const [quality, setQuality] = useState<number | undefined>(initial?.quality ?? undefined);
@@ -209,7 +213,80 @@ function NightBars({ nights }: { nights: (NightSummary | null)[] }) {
   );
 }
 
+function MoonIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" />
+    </svg>
+  );
+}
+
+/** Botão "Iniciar sono": guarda a hora de deitar. */
+function StartSleep({ prominent }: { prominent: boolean }) {
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const onClick = () =>
+    start(async () => {
+      setError(null);
+      const r = await startSleep();
+      if (r.error) setError(r.error);
+    });
+  return (
+    <div className={prominent ? "mb-5" : "mt-4 border-t border-border pt-4"}>
+      <Button type="button" variant={prominent ? "primary" : "secondary"} onClick={onClick} disabled={pending} className="w-full gap-2">
+        <MoonIcon className="size-5" />
+        {pending ? "Marcando…" : "Iniciar sono"}
+      </Button>
+      {prominent && <p className="mt-2 text-sm text-muted">Toque ao deitar. Quando acordar, toque em Acordei e a noite fica registrada.</p>}
+      {error && <div className="mt-3"><Notice tone="error">{error}</Notice></div>}
+    </div>
+  );
+}
+
+/** Dormindo: hora em que deitou, há quanto tempo, e o botão "Acordei". */
+function Sleeping({ since, onWake }: { since: string; onWake: () => void }) {
+  const [now, setNow] = useState<number | null>(null);
+  const [pending, start] = useTransition();
+  useEffect(() => {
+    const tick = () => setNow(Date.now());
+    const first = setTimeout(tick, 0);
+    const id = setInterval(tick, 60_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(id);
+    };
+  }, []);
+  return (
+    <div>
+      <div className="mb-5 flex items-center gap-4">
+        <span className="pop grid size-14 shrink-0 place-items-center rounded-2xl bg-primary-soft text-primary">
+          <MoonIcon className="size-7" />
+        </span>
+        <div>
+          <p className="text-muted">Dormindo desde</p>
+          <p className="tabular text-3xl font-bold tracking-tight">{formatTime(since)}</p>
+          {now !== null && <p className="text-sm text-muted">há {formatDuration((now - Date.parse(since)) / 60_000)}</p>}
+        </div>
+      </div>
+      <Button type="button" onClick={onWake} className="w-full">
+        Acordei
+      </Button>
+      <button
+        type="button"
+        onClick={() => start(() => cancelSleep())}
+        disabled={pending}
+        className="mt-2 min-h-11 w-full text-sm font-semibold text-muted"
+      >
+        {pending ? "Desfazendo…" : "Toquei sem querer, desfazer"}
+      </button>
+    </div>
+  );
+}
+
 export function SleepCard({
+  sleepingSince,
+  canStart,
+  evening,
   today,
   last,
   week,
@@ -225,12 +302,35 @@ export function SleepCard({
   apnea: { risk: "low" | "intermediate" | "high"; label: string } | null;
   /** De madrugada, antes de dormir, a noite a registrar é a anterior. */
   defaultNight: "today" | "yesterday";
+  /** Hora do "Iniciar sono" em aberto. */
+  sleepingSince: string | null;
+  /** false enquanto a migração 0006 não rodou. */
+  canStart: boolean;
+  /** Das 18h às 4h, o "Iniciar sono" vem no alto do cartão. */
+  evening: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  const [waking, setWaking] = useState<{ bed: string; wake: string } | null>(null);
+
+  if (waking) {
+    return (
+      <div>
+        <p className="mb-4 text-muted">Bom dia! Confira os horários e conte como foi a noite.</p>
+        <SleepForm initial={null} times={waking} defaultNight="today" onSaved={() => setWaking(null)} onCancel={() => setWaking(null)} />
+      </div>
+    );
+  }
+  if (sleepingSince) {
+    return <Sleeping since={sleepingSince} onWake={() => setWaking({ bed: formatTime(sleepingSince), wake: formatHHMM(minutesOfDay()) })} />;
+  }
+
+  const startTop = canStart && evening ? <StartSleep prominent /> : null;
+  const startBottom = canStart && !evening ? <StartSleep prominent={false} /> : null;
 
   if (!today || editing) {
     return (
       <div>
+        {!editing && startTop}
         {!today && <p className="mb-4 text-muted">Como foi a noite? Leva meio minuto.</p>}
         <SleepForm
           initial={today ?? last}
@@ -238,6 +338,7 @@ export function SleepCard({
           onSaved={() => setEditing(false)}
           onCancel={today ? () => setEditing(false) : undefined}
         />
+        {!editing && startBottom}
       </div>
     );
   }
@@ -246,6 +347,7 @@ export function SleepCard({
   const verdict = nightVerdict({ asleepMin: today.asleepMin, inBedMin: today.inBedMin, efficiency: today.efficiency });
   return (
     <div>
+      {startTop}
       <div className="mb-1 flex items-start justify-between gap-3">
         <div>
           <p className="text-3xl font-bold tracking-tight">{formatDuration(today.asleepMin)}</p>
@@ -276,6 +378,7 @@ export function SleepCard({
       <p className="mt-2 text-sm text-muted">Faixa cinza: 7 a 9 horas. Verde: acordou bem; âmbar: acordou mal.</p>
 
       {insight && <p className="rise mt-4 border-l-4 border-primary py-1 pl-4">{insight}</p>}
+      {startBottom}
 
       <div className="mt-4 border-t border-border pt-3 text-sm">
         {apnea ? (

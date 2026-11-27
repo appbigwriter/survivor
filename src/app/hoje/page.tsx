@@ -69,7 +69,7 @@ export default async function TodayPage() {
   const { from, to } = dayRange(today);
   const calendarFrom = dayRange(addDays(today, -(CALENDAR_DAYS - 1))).from;
 
-  const [goal, cautious, mealsRes, lastMealRes, stepsRes, weightsRes, historyRes, dizzyRes, streakRes, sleepRes, apneaRes, fastingCtx, activityCtx, lowBpRes] =
+  const [goal, cautious, mealsRes, lastMealRes, stepsRes, weightsRes, historyRes, dizzyRes, streakRes, sleepRes, apneaRes, fastingCtx, activityCtx, lowBpRes, sleepStartRes] =
     await Promise.all([
     getCurrentGoal(),
     isCautious(),
@@ -81,7 +81,8 @@ export default async function TodayPage() {
       .order("eaten_at"),
     supabase
       .from("meals")
-      .select("eaten_at")
+      // "*" para ler starts_fast sem quebrar enquanto a migração 0006 não rodou.
+      .select("*")
       .lte("eaten_at", now.toISOString())
       .gte("eaten_at", dayRange(addDays(today, -2)).from)
       .order("eaten_at", { ascending: false })
@@ -125,6 +126,7 @@ export default async function TodayPage() {
       .select("id", { count: "exact", head: true })
       .gte("measured_at", dayRange(addDays(today, -2)).from)
       .or("systolic.lt.100,diastolic.lt.60"),
+    supabase.from("sleep_starts").select("started_at").maybeSingle(),
   ]);
 
   const meals = (mealsRes.data ?? []) as MealRow[];
@@ -185,6 +187,7 @@ export default async function TodayPage() {
   }).length;
 
   const lastMealAt = lastMealRes.data?.eaten_at ?? null;
+  const lastMealStartsFast = Boolean(lastMealRes.data?.starts_fast);
   const lastMealAgo = lastMealAt ? (now.getTime() - Date.parse(lastMealAt)) / 60000 : null;
 
   // Sono: uma noite por dia (a manual tem prioridade), métricas e comparação com a comida.
@@ -232,9 +235,18 @@ export default async function TodayPage() {
   const sleepReady = !(sleepRes.error && isMissingTable(sleepRes.error));
   // De manhã, sem a noite registrada, o cartão de sono sobe para o topo.
   const morningAsk = sleepReady && !todaySleep && nowMinutes >= 4 * 60 && nowMinutes < 14 * 60;
+  // "Iniciar sono" em aberto; com mais de 16 h, foi esquecido e não vale mais.
+  const sleepStartReady = !(sleepStartRes.error && isMissingTable(sleepStartRes.error));
+  const startedAt = sleepStartRes.data?.started_at as string | undefined;
+  const sleepingSince = startedAt && now.getTime() - Date.parse(startedAt) < 16 * 3_600_000 ? startedAt : null;
+  // De manhã sem a noite registrada, ou dormindo, o cartão de sono sobe para o topo.
+  const sleepTop = morningAsk || (sleepReady && Boolean(sleepingSince));
   const sleepCard = (
-    <Card index={morningAsk ? 0 : 4} title="Sono">
+    <Card index={sleepTop ? 0 : 4} title="Sono">
       <SleepCard
+        sleepingSince={sleepingSince}
+        canStart={sleepStartReady}
+        evening={nowMinutes >= 18 * 60 || nowMinutes < 4 * 60}
         today={currentSleep ? summarize(currentSleep) : null}
         last={lastSleep ? summarize(lastSleep) : null}
         week={sleepWeek}
@@ -278,7 +290,7 @@ export default async function TodayPage() {
         <Notice>Você registrou tontura mais de uma vez nesta semana. Meça a pressão e fale com seu médico.</Notice>
       )}
 
-      {morningAsk && sleepCard}
+      {sleepTop && sleepCard}
 
       {goal && (
         <Card
@@ -353,6 +365,7 @@ export default async function TodayPage() {
             protocol={fasting.protocol}
             startMin={fastingStart}
             lastMealAt={lastMealAt}
+            lastMealStartsFast={lastMealStartsFast}
             serverNowMin={nowMinutes}
             serverSinceMin={lastMealAgo}
             todayFastH={fasts.get(today) ?? null}
@@ -385,7 +398,7 @@ export default async function TodayPage() {
         <QuickLog cautious={cautious} manualSteps={manualSteps} />
       </Card>
 
-      {sleepReady && !morningAsk && sleepCard}
+      {sleepReady && !sleepTop && sleepCard}
 
       <Card index={5} title="Peso">
         {currentAvg !== null ? (

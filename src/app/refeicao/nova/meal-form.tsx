@@ -2,14 +2,34 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { Button, Card, Field, Notice, Select, Textarea, Input } from "@/components/ui";
-import { MEAL_TYPE_LABEL } from "@/lib/dates";
+import { formatDuration, formatTime, MEAL_TYPE_LABEL, todayISO } from "@/lib/dates";
+import { mealFastingEffect, parseHHMM, protocolById, suggestStartsFast, type ProtocolId } from "@/lib/fasting";
 import { scale, total } from "@/lib/food/nutrients";
 import { analyzeMealText, saveMeal, type AnalyzeState, type DraftItem } from "../actions";
 
 const fmt = (n: number) => Math.round(n).toLocaleString("pt-BR");
 
-export function MealForm({ suggestedType }: { suggestedType: string }) {
+export function MealForm({
+  suggestedType,
+  today,
+  yesterday,
+  nowHHMM,
+  recentMeals,
+  fasting,
+}: {
+  suggestedType: string;
+  today: string;
+  yesterday: string;
+  nowHHMM: string;
+  /** Horários (ISO) das refeições dos últimos dias, em ordem. */
+  recentMeals: string[];
+  fasting: { protocol: ProtocolId; startMin: number } | null;
+}) {
   const [mealType, setMealType] = useState(suggestedType);
+  const [when, setWhen] = useState<"today" | "yesterday">("today");
+  const [time, setTime] = useState(nowHHMM);
+  // A sugestão de "última do dia" acompanha o tipo e o horário até a pessoa mexer nela.
+  const [startsFastChoice, setStartsFastChoice] = useState<boolean | null>(null);
   const [text, setText] = useState("");
   const [items, setItems] = useState<DraftItem[]>([]);
   const [state, analyze, analyzing] = useActionState<AnalyzeState, FormData>(async (prev, formData) => {
@@ -27,6 +47,14 @@ export function MealForm({ suggestedType }: { suggestedType: string }) {
   const update = (key: string, patch: Partial<DraftItem>) =>
     setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...patch } : it)));
 
+  const atMin = parseHHMM(time);
+  const at = atMin !== null ? new Date(`${when === "today" ? today : yesterday}T${time}:00-03:00`) : null;
+  const p = fasting ? protocolById(fasting.protocol) : null;
+  const startsFast =
+    fasting && atMin !== null ? (startsFastChoice ?? suggestStartsFast(mealType, atMin, fasting.protocol, fasting.startMin)) : false;
+  const previous = at ? recentMeals.filter((m) => Date.parse(m) < at.getTime()).at(-1) : undefined;
+  const effect = p && at ? mealFastingEffect(at, previous ? new Date(previous) : null, p.fastH) : null;
+
   const computed = items.map((it) => scale(it.options[it.selected].per100g, it.grams || 0));
   const sum = total(computed);
 
@@ -36,6 +64,9 @@ export function MealForm({ suggestedType }: { suggestedType: string }) {
       const res = await saveMeal({
         meal_type: mealType as "breakfast",
         input_text: text,
+        day: when,
+        time,
+        starts_fast: startsFast,
         items: items.map((it) => ({
           name: it.name,
           preparation: it.preparation,
@@ -58,6 +89,68 @@ export function MealForm({ suggestedType }: { suggestedType: string }) {
             ))}
           </Select>
         </Field>
+
+        <p className="mb-1 font-medium">Horário</p>
+        <div className="mb-4 flex gap-2">
+          <div role="radiogroup" aria-label="Dia da refeição" className="grid flex-1 grid-cols-2 gap-2">
+            {(["today", "yesterday"] as const).map((d) => (
+              <button
+                key={d}
+                type="button"
+                role="radio"
+                aria-checked={when === d}
+                onClick={() => setWhen(d)}
+                className={`min-h-12 rounded-2xl border-2 font-semibold transition active:scale-[0.97] ${
+                  when === d ? "border-primary bg-primary-soft" : "border-border bg-surface"
+                }`}
+              >
+                {d === "today" ? "Hoje" : "Ontem"}
+              </button>
+            ))}
+          </div>
+          <div className="w-36 shrink-0">
+            <Input
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              aria-label="Hora da refeição"
+              required
+              className="tabular text-center text-lg"
+            />
+          </div>
+        </div>
+
+        {p && effect && (
+          <div className="mb-5 rounded-2xl bg-surface-2 p-4">
+            <p className="mb-2 font-semibold">Jejum {p.id}</p>
+            {effect.ends && (
+              <p className="mb-3">
+                {effect.ends.reached ? "✓ " : ""}Esta refeição encerra um jejum de <strong>{formatDuration(effect.ends.hours * 60)}</strong>.{" "}
+                <span className="text-muted">{effect.ends.reached ? `Meta de ${p.fastH} h cumprida.` : `A meta era de ${p.fastH} h.`}</span>
+              </p>
+            )}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={startsFast}
+              onClick={() => setStartsFastChoice(!startsFast)}
+              className="flex min-h-11 w-full items-center gap-3 text-left"
+            >
+              <span className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${startsFast ? "bg-primary" : "bg-border"}`} aria-hidden>
+                <span
+                  className={`absolute top-1 left-0 size-6 rounded-full bg-white shadow transition-transform ${startsFast ? "translate-x-7" : "translate-x-1"}`}
+                />
+              </span>
+              <span className="font-semibold">Última refeição do dia</span>
+            </button>
+            <p className="mt-2 text-sm text-muted">
+              {startsFast
+                ? `O jejum começa às ${time}. A meta de ${p.fastH} h termina ${dayWord(effect.targetEnd, today)} às ${formatTime(effect.targetEnd.toISOString())}.`
+                : "O jejum começa quando a janela de alimentação fechar, ou na refeição marcada como a última do dia."}
+            </p>
+          </div>
+        )}
+
         <form action={analyze}>
           <Field
             label={items.length ? "Esqueceu algo? Descreva e adicione" : "O que você comeu?"}
@@ -148,11 +241,17 @@ export function MealForm({ suggestedType }: { suggestedType: string }) {
             </p>
           </div>
           {saveError && <div className="mt-3"><Notice tone="error">{saveError}</Notice></div>}
-          <Button type="button" onClick={onSave} disabled={saving || items.some((i) => !i.grams)} className="mt-3 w-full">
+          <Button type="button" onClick={onSave} disabled={saving || atMin === null || items.some((i) => !i.grams)} className="mt-3 w-full">
             {saving ? "Salvando..." : "Salvar refeição"}
           </Button>
         </Card>
       )}
     </>
   );
+}
+
+/** "hoje", "amanhã" ou "ontem" para o fim da meta do jejum. */
+function dayWord(d: Date, today: string) {
+  const day = todayISO(d);
+  return day === today ? "hoje" : day > today ? "amanhã" : "ontem";
 }

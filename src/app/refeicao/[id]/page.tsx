@@ -27,7 +27,10 @@ export default async function MealPage({ params }: PageProps<"/refeicao/[id]">) 
 
   return (
     <Page title={MEAL_TYPE_LABEL[meal.meal_type]} back="/hoje">
-      <p className="-mt-4 mb-4 text-muted">{formatDateTime(meal.eaten_at)}</p>
+      <p className="-mt-4 mb-4 text-muted">
+        {formatDateTime(meal.eaten_at)}
+        {meal.starts_fast ? " · última do dia, o jejum começou aqui" : ""}
+      </p>
       {meal.input_text && (
         <Card title="Você escreveu">
           <p>{meal.input_text}</p>

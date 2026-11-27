@@ -19,6 +19,7 @@ const USER_TABLES = [
   "fasting_settings",
   "sleep_screenings",
   "sleep_logs",
+  "sleep_starts",
   "symptom_logs",
   "bp_logs",
   "step_logs",
@@ -35,6 +36,11 @@ const USER_TABLES = [
 /** Tabela que ainda não existe porque a migração dela não rodou. */
 export function isMissingTable(error: { code?: string }): boolean {
   return error.code === "PGRST205" || error.code === "42P01";
+}
+
+/** Coluna que ainda não existe porque a migração não rodou. */
+export function isMissingColumn(error: { code?: string }): boolean {
+  return error.code === "PGRST204" || error.code === "42703";
 }
 
 /** Apaga todos os dados do Survivor de uma pessoa, sem tocar no login. */
